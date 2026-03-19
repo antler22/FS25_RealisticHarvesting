@@ -649,6 +649,9 @@ Funkciók:
         <text name="rhm_ui_section_performance">
             <en>Performance</en><uk>Ефективність</uk><de>Leistung</de><fr>Performance</fr><pl>Efektywność</pl>
         </text>
+        <text name="rhm_ui_section_discharge">
+            <en>Discharge</en><uk>Вивантаження</uk><de>Abwurf</de><fr>Éjection</fr><pl>Wyrzut</pl>
+        </text>
 
         <!-- ============================= -->
         <!-- MACHINE-TYPE PARAMETER LABELS -->

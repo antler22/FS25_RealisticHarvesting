@@ -359,10 +359,18 @@ end
 
 -- ============================================================================
 -- EN: Time-of-day moisture factor.
---     Morning dew and evening humidity increase effective crop resistance,
---     raising engine load and naturally slowing the machine down.
---     Dry afternoon window (10am-5pm) = 1.0 baseline.
---     Moisture label is set for HUD display when conditions are non-optimal.
+--     Wet crop is heavier to process — moisture multiplies effective crop
+--     resistance, raising engine load so the speed control naturally backs
+--     the machine off to maintain target load.
+--
+--     Schedule (all times are in-game clock hours):
+--       00:00 – 06:00  Night dew    — full penalty  (factor 2.0 → ~50% speed)
+--       06:00 – 09:00  Morning burn-off — linear taper from 2.0 → 1.0
+--       09:00 – 19:00  Optimal window — no penalty  (factor 1.0)
+--       19:00 – 24:00  Evening dew build-up — linear rise from 1.0 → 2.0
+--
+--     factor = 2.0 means the combine must run at ~50% of its normal speed
+--     to keep engine load at target.  Factor = 1.0 = normal full speed.
 -- UA: Коефіцієнт вологості часу доби.
 -- ============================================================================
 function LoadCalculator:updateMoistureFactor(dt)
@@ -372,43 +380,40 @@ function LoadCalculator:updateMoistureFactor(dt)
 
     if not g_currentMission or not g_currentMission.environment then
         self.moistureFactor = 1.0
-        self.moistureLabel = ""
+        self.moistureLabel  = ""
         return
     end
 
     -- EN: dayTime is milliseconds since midnight. 24h = 86,400,000 ms.
     -- UA: dayTime — мілісекунди від опівночі. 24 год = 86 400 000 мс.
     local dayTime = g_currentMission.environment.currentDayTime or 0
-    local hour = dayTime / 3600000  -- EN: Convert to fractional hours / UA: Перетворюємо в дробові години
+    local hour    = dayTime / 3600000  -- EN: Fractional hours 0.0–24.0 / UA: Дробові години 0.0–24.0
 
-    -- EN: Moisture windows (hour ranges):
-    --   22:00-06:00 = Night dew      → +12% crop resistance
-    --   06:00-09:00 = Morning dew    → +15% crop resistance (peak wet window)
-    --   09:00-10:30 = Drying out     → +5%
-    --   10:30-17:00 = Optimal window → 0% (factor 1.0)
-    --   17:00-19:00 = Evening rise   → +5%
-    --   19:00-22:00 = Evening dew    → +10%
-    -- UA: Вікна вологості (діапазони годин):
     local factor, label
-    if hour >= 6.0 and hour < 9.0 then
-        factor = 1.15
-        label  = "Morning Dew +15%"
-    elseif hour >= 9.0 and hour < 10.5 then
-        factor = 1.05
-        label  = "Drying +5%"
-    elseif hour >= 10.5 and hour < 17.0 then
+
+    if hour < 6.0 then
+        -- EN: 00:00–06:00 — full night penalty / UA: 00:00–06:00 — повний нічний штраф
+        factor = 2.0
+        label  = "Night Dew"
+
+    elseif hour < 9.0 then
+        -- EN: 06:00–09:00 — dew burning off, linear taper 2.0 → 1.0
+        -- UA: 06:00–09:00 — роса висихає, лінійне зменшення 2.0 → 1.0
+        local t = (hour - 6.0) / 3.0  -- EN: 0.0 at 6am, 1.0 at 9am
+        factor = 2.0 - t              -- EN: 2.0 → 1.0
+        label  = "Morning Dew"
+
+    elseif hour < 19.0 then
+        -- EN: 09:00–19:00 — optimal harvest window / UA: 09:00–19:00 — оптимальне вікно збирання
         factor = 1.0
         label  = ""
-    elseif hour >= 17.0 and hour < 19.0 then
-        factor = 1.05
-        label  = "Humidity +5%"
-    elseif hour >= 19.0 and hour < 22.0 then
-        factor = 1.10
-        label  = "Eve. Dew +10%"
+
     else
-        -- EN: Night (22:00-06:00) / UA: Ніч (22:00-06:00)
-        factor = 1.12
-        label  = "Night Dew +12%"
+        -- EN: 19:00–24:00 — evening dew building, linear rise 1.0 → 2.0
+        -- UA: 19:00–24:00 — вечірня роса, лінійне зростання 1.0 → 2.0
+        local t = (hour - 19.0) / 5.0  -- EN: 0.0 at 7pm, 1.0 at midnight
+        factor = 1.0 + t               -- EN: 1.0 → 2.0
+        label  = "Evening Dew"
     end
 
     self.moistureFactor = factor
@@ -425,6 +430,9 @@ end
 LoadCalculator.HEADER_LOSS_CROP_FACTORS = {
     canola    = 2.0,   -- EN: Pod shatter very sensitive / UA: Дуже чутливий до розтріскування стручків
     soybean   = 1.8,   -- EN: Pod shatter risk / UA: Ризик розтріскування стручків
+    pea       = 1.7,   -- EN: Pea pod shatter (FS25 crop key: PEA) / UA: Розтріскування стручків гороху
+    lentil    = 1.6,   -- EN: Lentil pod shatter / UA: Розтріскування стручків сочевиці
+    chickpea  = 1.5,   -- EN: Chickpea pod shatter / UA: Розтріскування нуту
     sunflower = 1.5,   -- EN: Head shatter / UA: Розтріскування кошика
     oat       = 1.2,   -- EN: Loose hull / UA: Слабкий лушпій
     rice      = 1.1,   -- EN: Shattering at tip / UA: Розтріскування на кінчику
@@ -432,7 +440,6 @@ LoadCalculator.HEADER_LOSS_CROP_FACTORS = {
     barley    = 1.0,
     sorghum   = 0.8,
     corn      = 0.25,  -- EN: Kernels well-protected in husk / UA: Зерна добре захищені в лушпинні
-    legume    = 1.6,   -- EN: Bean/pea pod shatter / UA: Розтріскування стручків бобів/гороху
 }
 
 function LoadCalculator:calculateHeaderLoss(vehicle)

@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    FS25 Realistic Harvesting — Crop Throughput Configuration
+    FS25 Realistic Harvesting — Crop Throughput Configuration Antler22
     ==========================================================
 
-    HOW THIS FILE WORKS
-    -------------------
+    HOW THIS FILE WORKS 
     The mod derives a power-law throughput curve for each crop using two
     real-world anchor points taken from AEM combine class data:
 
@@ -20,14 +19,12 @@
     large machines land near the max.
 
     WHAT TO TUNE
-    ------------
     Change buPerHrMin and buPerHrMax to match what your local crop and
     variety actually produces under good conditions.  You do NOT need to
     list every crop — any crop not listed here uses the mod's built-in
     defaults.
 
     FILE LOCATION
-    -------------
     This file ships in the mod folder and loads automatically.
     To override it, copy it to:
         <My Documents>/My Games/FarmingSimulator2025/
@@ -35,7 +32,6 @@
     The modSettings copy takes priority over the bundled one.
 
     BUSHEL WEIGHTS USED (USDA test weight)
-    ----------------------------------------
     wheat / soybean / legume / potato : 60 lb/bu
     corn / sorghum                    : 56 lb/bu
     barley                            : 48 lb/bu
@@ -46,7 +42,6 @@
 
     REAL-WORLD ANCHOR REFERENCES
     (ideal conditions, modern header, proper settings)
-    ---------------------------------------------------
     Class 6  ≈ 280 hp  e.g. JD S670,   Case IH 7250,  NH CR8.90
     Class 10 ≈ 750 hp  e.g. JD X9 1100, Case AF9240,  NH CR11
 
@@ -60,10 +55,11 @@
     Sunflower             450        1,100 bu/hr
     Sorghum             1,200        3,200 bu/hr
     Rice                  800        2,000 bu/hr
-    Legume/Peas           900        2,600 bu/hr
+    Peas (PEA)            800        2,600 bu/hr
+    Lentil (LENTIL)       700        2,200 bu/hr
+    Chickpea (CHICKPEA)   750        2,400 bu/hr
 
     PREDICTED MID-RANGE (computed from the defaults above)
-    -------------------------------------------------------
                         400 hp       500 hp       600 hp
     Wheat               1,768        2,253        2,747 bu/hr
     Barley              2,010        2,520        3,031 bu/hr
@@ -72,7 +68,6 @@
     Canola                985        1,220        1,453 bu/hr
 
     ALTERNATIVE: SINGLE-POINT MODE (advanced)
-    ------------------------------------------
     If you only want to set one reference point, use buPerHrRef alone.
     The mod will treat it as the 400 hp reference and use a fixed exponent
     of 0.75.  This is less accurate than the two-point form.
@@ -84,7 +79,7 @@
     <!-- ── Grain crops ──────────────────────────────────────────────────── -->
 
     <crop name="wheat"
-          buPerHrMin="1200"
+          buPerHrMin="800"
           buPerHrMax="3500" />
 
     <crop name="barley"
@@ -96,8 +91,8 @@
           buPerHrMax="3200" />
 
     <crop name="corn"
-          buPerHrMin="2000"
-          buPerHrMax="6000" />
+          buPerHrMin="2200"
+          buPerHrMax="10000" />
 
     <crop name="sorghum"
           buPerHrMin="1200"
@@ -110,8 +105,8 @@
     <!-- ── Oilseed and specialty crops ──────────────────────────────────── -->
 
     <crop name="soybean"
-          buPerHrMin="900"
-          buPerHrMax="2600" />
+          buPerHrMin="800"
+          buPerHrMax="3200" />
 
     <crop name="canola"
           buPerHrMin="700"
@@ -121,10 +116,18 @@
           buPerHrMin="450"
           buPerHrMax="1100" />
 
-    <!-- ── Pulse crops ───────────────────────────────────────────────────── -->
+    <!-- ── Pulse crops (FS25 keys: PEA, LENTIL, CHICKPEA) ──────────────── -->
 
-    <crop name="legume"
-          buPerHrMin="900"
+    <crop name="pea"
+          buPerHrMin="800"
           buPerHrMax="2600" />
+
+    <crop name="lentil"
+          buPerHrMin="700"
+          buPerHrMax="2200" />
+
+    <crop name="chickpea"
+          buPerHrMin="750"
+          buPerHrMax="2400" />
 
 </cropThroughput>

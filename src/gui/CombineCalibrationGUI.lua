@@ -24,12 +24,16 @@ local CombineCalibrationGUI_mt = Class(CombineCalibrationGUI)
 --     Параметри яких немає у цьому списку що приходять з getParamsForMachineType потрапляють
 --     у загальну секцію "OTHER" перед секцією Performance/TargetEngineLoad.
 local PARAM_SECTION_MAP = {
-    fan        = "CLEANING",
-    rotor      = "SEPARATION",
-    feeder     = "SEPARATION",   -- forage/root/cotton feed roll
-    concave    = "SEPARATION",   -- grain concave gap (0-50mm)
-    upperSieve = "CLEANING",
-    lowerSieve = "CLEANING",
+    fan             = "CLEANING",
+    rotor           = "SEPARATION",
+    feeder          = "SEPARATION",   -- forage/root/cotton feed roll
+    concave         = "SEPARATION",   -- grain concave gap (0-50mm)
+    upperSieve      = "CLEANING",
+    lowerSieve      = "CLEANING",
+    chopLength      = "SEPARATION",   -- forage chop length (3-25mm)
+    kernelProcessor = "SEPARATION",   -- forage kernel processor gap (0-5mm)
+    blower          = "DISCHARGE",    -- forage blower gap (0-6mm)
+    shakingIntensity = "SEPARATION",  -- root harvester shaking intensity (1-5)
 }
 
 -- EN: Ordered section definitions for the draw loop.
@@ -37,6 +41,7 @@ local PARAM_SECTION_MAP = {
 local SECTIONS_ORDERED = {
     { key = "SEPARATION", label = "rhm_ui_section_separation" },
     { key = "CLEANING",   label = "rhm_ui_section_cleaning"   },
+    { key = "DISCHARGE",  label = "rhm_ui_section_discharge"  },
 }
 
 -- EN: Creates a new GUI instance. Initializes UI layout constants, color palette,

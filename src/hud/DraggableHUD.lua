@@ -326,6 +326,8 @@ function DraggableHUD:drawContent()
     local rhmSpec = self.vehicle and self.vehicle.spec_rhm_Combine
     local upgradeLevel = rhmSpec and rhmSpec.combineMemory and (rhmSpec.combineMemory.upgradeLevel or 0) or 0
     local hasCalibration = upgradeLevel >= 1
+    local machineType = rhmSpec and rhmSpec.combineMemory and rhmSpec.combineMemory.machineType
+    local isForage = machineType == "forage"
 
     -- EN: PLUG WARNING — highest priority, shown in urgent red when rotor is plugged.
     --     Displayed regardless of upgrade level (critical safety information).
@@ -347,9 +349,9 @@ function DraggableHUD:drawContent()
         textY = textY - lineHeight
     end
 
-    -- EN: Threshing Crop Loss row (Calibration tier 1+).
-    -- UA: Рядок втрат при обмолоті (рівень 1+).
-    if self.settings.showCropLoss and hasCalibration then
+    -- EN: Threshing Crop Loss row (Calibration tier 1+). Hidden for forage combines.
+    -- UA: Рядок втрат при обмолоті (рівень 1+). Прихований для силосних комбайнів.
+    if self.settings.showCropLoss and hasCalibration and not isForage then
         local lossVal = self.data.cropLoss or 0
         local lossStr
         if lossVal > 0.1 then
@@ -433,12 +435,14 @@ function DraggableHUD:updateSize()
     local rhmSpec = self.vehicle and self.vehicle.spec_rhm_Combine
     local upgradeLevel = rhmSpec and rhmSpec.combineMemory and (rhmSpec.combineMemory.upgradeLevel or 0) or 0
     local hasCalibration = upgradeLevel >= 1
+    local machineType = rhmSpec and rhmSpec.combineMemory and rhmSpec.combineMemory.machineType
+    local isForage = machineType == "forage"
 
     local rowCount = 0
     if self.settings.showLoad        then rowCount = rowCount + 1 end
     if self.settings.showYield        then rowCount = rowCount + 1 end
     if self.settings.showProductivity then rowCount = rowCount + 1 end
-    if self.settings.showCropLoss and hasCalibration then rowCount = rowCount + 1 end
+    if self.settings.showCropLoss and hasCalibration and not isForage then rowCount = rowCount + 1 end
     -- EN: Header loss row — shown when Calibration (tier 1+) installed and loss > 0.1%.
     if hasCalibration and (self.data.headerLoss or 0) > 0.1 then rowCount = rowCount + 1 end
     -- EN: Moisture indicator — one extra row when conditions are non-optimal (tier 1+).

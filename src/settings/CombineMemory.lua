@@ -270,18 +270,16 @@ function CombineMemory:loadUserPreset()
                 event:run(conn)
             end
         else
-            -- EN: Direct application (single player without g_client).
-            -- UA: Пряме застосування (однокористувацька гра без g_client).
-            self.currentSettings.fan = profile.fan
-            self.currentSettings.rotor = profile.rotor
-            self.currentSettings.upperSieve = profile.upperSieve
-            self.currentSettings.lowerSieve = profile.lowerSieve
-            -- EN: Grain combines use 'concave'; forage/root/cotton still use 'feeder'.
-            --     Load 'concave' from profile, falling back to legacy 'feeder' key for old saves.
-            if self.currentSettings.concave ~= nil then
-                self.currentSettings.concave = profile.concave or profile.feeder or 50
-            else
-                self.currentSettings.feeder = profile.feeder or 50
+            -- EN: Dynamic application — iterate active params for this machine type so
+            --     forage (chopLength/kernelProcessor/blower) and root (shakingIntensity)
+            --     are handled without hardcoding every param name.
+            -- UA: Динамічне застосування — перебираємо активні параметри для типу машини.
+            local activeParams = CombineSettingsDatabase:getParamsForMachineType(self.machineType)
+            for _, pName in ipairs(activeParams) do
+                if self.currentSettings[pName] ~= nil then
+                    -- EN: Fall back to legacy 'feeder' key for old saves that predate 'concave'.
+                    self.currentSettings[pName] = profile[pName] or profile.feeder or 50
+                end
             end
             self.currentSettings.targetEngineLoad = profile.targetEngineLoad or 95
             self.mode = "MANUAL"
