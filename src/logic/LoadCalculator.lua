@@ -28,6 +28,8 @@ function LoadCalculator.new(modDirectory)
     
     -- EN: Base perf (will be set in onLoad) / UA: Базова продуктивність (оновиться в onLoad)
     self.basePerfMass = 0  -- EN: kg per second / UA: кг на секунду
+    self.cachedHP = 0            -- EN: Engine HP cached for dynamic crop-curve updates / UA: Кешоване HP для динамічних оновлень
+    self.lastBasePerfCrop = nil  -- EN: Crop name used when basePerfMass was last calculated / UA: Культура при останньому розрахунку
     self.currentAvgMass = 0
     self.lastAvgMass = 0  -- EN: Prior average for acceleration / UA: Попереднє середнє для прискорення
     self.rawAvgMass = 0  -- EN: Raw unsmoothed value for braking / UA: Сире незгладжене для гальмування
@@ -325,21 +327,18 @@ function LoadCalculator:getBasePerformanceFromPower(vehicle)
         --     застосовується, коли немає перевизначення CropThroughputConfig для культури.
         local REF_HP = 400.0
         local hp = tonumber(power)
+
+        -- EN: Cache HP so the dynamic per-crop recalculation in calculateEngineLoad can reuse it.
+        -- UA: Кешуємо HP щоб динамічний перерахунок у calculateEngineLoad міг його використати.
+        self.cachedHP = hp
+
         local basePerf = coef * (REF_HP ^ 0.25) * (hp ^ 0.75)
 
-        -- EN: CropThroughputConfig provides a per-crop power-law curve derived from two real-world
-        --     anchor points (280 hp = AEM Class 6 min, 750 hp = AEM Class 10 max).
-        --     When present, use  basePerf = A * hp^B  directly, which correctly places every
-        --     machine HP between those anchors on the right calibrated curve.
-        -- UA: CropThroughputConfig надає криву для кожної культури, виведену з двох реальних
-        --     опорних точок (280 к.с. = мінімум Class 6, 750 к.с. = максимум Class 10).
-        if CropThroughputConfig and CropThroughputConfig.getCurveParams then
-            local cropName = self.combineMemory and self.combineMemory.currentCrop
-            local params = CropThroughputConfig.getCurveParams(cropName)
-            if params then
-                basePerf = params.coef * (hp ^ params.exp)
-            end
-        end
+        -- EN: CropThroughputConfig AEM anchor curves are NOT applied here at init time because
+        --     currentCrop is always nil at onPostLoad. The crop-specific curve is instead applied
+        --     dynamically in calculateEngineLoad whenever the active crop changes.
+        -- UA: Криві AEM тут не застосовуються, бо currentCrop завжди nil під час ініціалізації.
+        --     Натомість крива конкретної культури динамічно оновлюється у calculateEngineLoad.
 
         if rhm_Combine and rhm_Combine.debug then
             print(string.format("RHM DEBUG: BasePerf Mass computed for %s (cat: %s, coef: %.3f): %d hp -> %.2f kg/s (%.1f t/h)",
@@ -671,7 +670,26 @@ function LoadCalculator:calculateEngineLoad(vehicle)
     if self.currentTime <= 0 then
         return
     end
-    
+
+    -- EN: Dynamic basePerfMass update — recalculate when the active crop changes.
+    --     At onPostLoad (init time) currentCrop is always nil, so the AEM per-crop curve
+    --     could never be applied then. We apply it here the first time the crop is known.
+    -- UA: Динамічне оновлення basePerfMass — перераховуємо при зміні активної культури.
+    --     При ініціалізації currentCrop завжди nil, тому тут застосовуємо криву культури.
+    local currentCropName = self.combineMemory and self.combineMemory.currentCrop
+    if currentCropName and currentCropName ~= self.lastBasePerfCrop and self.cachedHP > 0 then
+        local params = CropThroughputConfig and CropThroughputConfig.getCurveParams
+                       and CropThroughputConfig.getCurveParams(currentCropName)
+        if params then
+            self.basePerfMass = params.coef * (self.cachedHP ^ params.exp)
+            if rhm_Combine and rhm_Combine.debug then
+                print(string.format("RHM: [Throughput] Crop changed to %s — basePerfMass updated to %.2f kg/s (%.0f t/h) at %d hp",
+                    currentCropName, self.basePerfMass, self.basePerfMass * 3.6, self.cachedHP))
+            end
+        end
+        self.lastBasePerfCrop = currentCropName
+    end
+
     -- EN: BASE CROP FACTOR / UA: БАЗОВИЙ КОЕФІЦІЄНТ КУЛЬТУРИ
     -- EN: Priority: 1. FruitType (Direct Cut), 2. FillType (Pickup/Windrow), 3. Wheat fallback
     local spec_combine = vehicle.spec_combine
@@ -890,9 +908,14 @@ function LoadCalculator:calculateSpeedLimit(vehicle)
     
     self.speedLimit = self.speedLimit + step
 
-    -- EN: Clamp speed within safe bounds
-    -- UA: Обмеження швидкості: не менше 2 км/год і не більше оригінального ліміту гри
-    self.speedLimit = math.max(2.0, math.min(self.genuineSpeedLimit, self.speedLimit))
+    -- EN: Clamp speed within safe bounds. Only apply genuineSpeedLimit ceiling when it has been
+    --     initialized (> 0). When genuineSpeedLimit = -1 (not yet set), using math.min(-1, x)
+    --     would instantly pin speedLimit to the 2 km/h floor — avoid that race condition.
+    -- UA: Обмежуємо швидкість. Стелю genuineSpeedLimit застосовуємо лише коли він встановлений (>0).
+    --     Якщо genuineSpeedLimit = -1 (ще не встановлений), math.min(-1, x) миттєво зіпхне
+    --     speedLimit до мінімуму 2 км/год — уникаємо цього перегону стану.
+    local gslCap = self.genuineSpeedLimit > 0 and self.genuineSpeedLimit or math.huge
+    self.speedLimit = math.max(2.0, math.min(gslCap, self.speedLimit))
 end
 
 ---EN: Returns current engine load factor / UA: Повертає поточне навантаження двигуна

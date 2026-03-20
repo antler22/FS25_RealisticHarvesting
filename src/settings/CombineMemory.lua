@@ -85,9 +85,28 @@ function CombineMemory:purchaseUpgrade(targetLevel)
 
     local cost = CombineMemory.UPGRADE_COSTS[targetLevel] or 0
 
-    -- EN: Resolve player farm and check balance.
+    -- EN: Resolve player farm using a fallback chain.
+    --     g_currentMission.player.farmId is unreliable when the player is seated in a vehicle
+    --     (the player entity may be detached or report spectator farmId = 0).
+    --     The vehicle's ownerFarmId is the most reliable source in that case.
+    -- UA: Отримуємо ферму гравця через ланцюжок запасних варіантів.
+    --     g_currentMission.player.farmId ненадійний коли гравець сидить у транспорті.
+    --     ownerFarmId транспортного засобу — найнадійніше джерело в такому випадку.
     local farmId = g_currentMission and g_currentMission.player and g_currentMission.player.farmId
-    local farm   = farmId and g_farmManager and g_farmManager:getFarmById(farmId)
+    -- Fallback 1: use the combine vehicle's own owner farm
+    if (not farmId or farmId == 0) and self.combine then
+        farmId = self.combine.ownerFarmId
+    end
+    -- Fallback 2: iterate all farms for the first non-spectator farm (single-player safe)
+    if (not farmId or farmId == 0) and g_farmManager then
+        for id, _ in pairs(g_farmManager.farms or {}) do
+            if id ~= FarmManager.SPECTATOR_FARM_ID then
+                farmId = id
+                break
+            end
+        end
+    end
+    local farm = farmId and farmId > 0 and g_farmManager and g_farmManager:getFarmById(farmId)
     if not farm then
         return false, "no_farm"
     end
