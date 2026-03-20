@@ -25,13 +25,13 @@ local templates = {
     -- ============================
 
     -- Wheat/Rye/Spelt/Triticale
-    -- Rotor: ~590 RPM → 49%, Concave: 12mm → 24%, Chaffer: 14mm → 47%, Sieve: 8mm → 27%, Fan: 740 RPM → 27%
+    -- Rotor: 700 RPM → 63%, Concave: 3mm → 6%, Chaffer: 15mm → 50%, Sieve: 4mm → 13%, Fan: 1000 RPM → 56%
     wheat = {
-        rotor      = {optimal = 49, min = 35, max = 65, tolerance = 6},   -- ~590 RPM
-        concave    = {optimal = 24, min = 10, max = 44, tolerance = 5},   -- 12 mm
-        upperSieve = {optimal = 47, min = 30, max = 67, tolerance = 6},   -- 14 mm
-        lowerSieve = {optimal = 27, min = 15, max = 47, tolerance = 6},   -- 8 mm
-        fan        = {optimal = 27, min = 13, max = 47, tolerance = 7},   -- 740 RPM
+        rotor      = {optimal = 63, min = 50, max = 75, tolerance = 6},   -- 700 RPM
+        concave    = {optimal =  6, min =  2, max = 16, tolerance = 4},   -- 3 mm
+        upperSieve = {optimal = 50, min = 33, max = 63, tolerance = 6},   -- 15 mm
+        lowerSieve = {optimal = 13, min =  7, max = 23, tolerance = 5},   -- 4 mm
+        fan        = {optimal = 56, min = 37, max = 72, tolerance = 7},   -- 1000 RPM
     },
 
     -- Barley

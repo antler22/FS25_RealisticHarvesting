@@ -32,6 +32,7 @@ source(modDirectory .. "src/settings/CombineMemory.lua")
 source(modDirectory .. "src/network/CombineSettingsEvent.lua")
 source(modDirectory .. "src/config/CropThroughputConfig.lua")
 source(modDirectory .. "src/logic/LoadCalculator.lua")
+source(modDirectory .. "src/shop/RHMShopIntegration.lua")
 source(modDirectory .. "src/rhm_Combine.lua")
 -- EN: CRITICAL: rhm_Cutter must be loaded AFTER rhm_Combine for independent header launch to work.
 -- UA: КРИТИЧНО: rhm_Cutter має бути завантажений ПІСЛЯ rhm_Combine, щоб роздільний запуск жатки працював.

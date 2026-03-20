@@ -20,10 +20,10 @@ local CombineMemory_mt = Class(CombineMemory)
 CombineMemory.UPGRADE_COSTS = { [1] = 2500, [2] = 5000, [3] = 10000, [4] = 20000 }
 CombineMemory.UPGRADE_NAMES = {
     [0] = "No Upgrade",
-    [1] = "Calibration System",
-    [2] = "Machine Monitor",
-    [3] = "Speed Control",
-    [4] = "Auto Pilot",
+    [1] = "Loss Catch Pan",
+    [2] = "Settings Monitoring",
+    [3] = "Speed Automation",
+    [4] = "Full Automation",
 }
 CombineMemory.UPGRADE_DESC = {
     [1] = "Shows live crop loss % and header loss in HUD",

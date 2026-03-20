@@ -332,6 +332,20 @@ function rhm_Combine:onLoad(savegame)
     --     щоб регулювання налаштувань впливало на поточні розрахунки навантаження і втрат.
     spec.combineMemory = CombineMemory.new(self, machineType)
     spec.loadCalculator.combineMemory = spec.combineMemory
+
+    -- EN: For vehicles newly purchased from the store: read the selected rhm_upgradeTier
+    --     configuration index and apply it as the starting upgrade level.
+    --     (For vehicles loaded from savegame, loadFromXMLFile takes MAX of XML and store values.)
+    -- UA: Для нових транспортних засобів, куплених у магазині: зчитуємо вибраний індекс
+    --     конфігурації rhm_upgradeTier і встановлюємо його як початковий рівень апгрейду.
+    if RHMShopIntegration then
+        local storeLevel = RHMShopIntegration.getUpgradeLevelFromConfig(self)
+        if storeLevel and storeLevel > 0 then
+            spec.combineMemory.upgradeLevel = storeLevel
+            print(string.format("RHM: [Shop] New vehicle — upgrade level set to %d from store config", storeLevel))
+        end
+    end
+
     print("RHM: [OK] Combine Settings System initialized")
 
     
@@ -671,13 +685,28 @@ function rhm_Combine:getSpeedLimit(superFunc, onlyIfWorking)
         end
     end
     
-    -- EN: Set genuineSpeedLimit ONCE from the game's max speed cap (1.5x game limit, min 18 km/h).
-    --     This cap is the ceiling — our dynamic limit oscillates below it.
-    -- UA: Встановлюємо genuineSpeedLimit ОДИН РАЗ з максимального ліміту гри (1.5x ліміту, мін. 18 км/год).
-    --     Цей стеля — наш динамічний ліміт коливається нижче нього.
+    -- EN: Enforce a minimum harvestable speed of 8 mph (12.87 km/h) so players can always reach
+    --     speeds where header losses become significant, regardless of a header's XML maxWorkingSpeed.
+    --     The calculatedLimit from LoadCalculator can still drop below this when the combine is
+    --     overloaded — this floor only sets the ceiling, not the active limit.
+    -- UA: Мінімальна швидкість збирання 8 mph (12.87 км/год) — щоб гравці могли досягти швидкостей,
+    --     при яких виникають втрати жатки, незалежно від maxWorkingSpeed у XML жатки.
+    local MIN_HARVEST_KMH = 12.87
+    if limit ~= math.huge and limit < MIN_HARVEST_KMH then
+        limit = MIN_HARVEST_KMH
+    end
+
+    -- EN: Set genuineSpeedLimit ONCE. Cap at 20 km/h (12.4 mph) — no grain combine should harvest
+    --     faster than that. The vanilla limit passed here is the vehicle's ROAD speed (40-55 km/h
+    --     for modern combines), NOT the working speed, because grain cutter doCheckSpeedLimit=false
+    --     means the cutter does not contribute a lower cap. Without this cap the recommendedSpeed
+    --     display would climb to the vehicle's road speed when the combine is under-loaded.
+    -- UA: Встановлюємо genuineSpeedLimit ОДИН РАЗ. Обмежуємо 20 км/год — жоден зерновий комбайн
+    --     не повинен збирати швидше. Ванільний ліміт тут — дорожня швидкість (40-55 км/год),
+    --     а не робоча, бо жатка не знижує ліміт (doCheckSpeedLimit=false).
     if spec.loadCalculator.genuineSpeedLimit == -1 and limit ~= math.huge then
-        -- EN: Use vanilla game limit as absolute cap (no speed bonus) / UA: Ванільний ліміт як абсолютна межа (без бонусів)
-        spec.loadCalculator:setGenuineSpeedLimit(limit, limit)
+        local harvestCap = math.min(limit, 20.0)
+        spec.loadCalculator:setGenuineSpeedLimit(harvestCap, harvestCap)
     end
     
     -- EN: MULTIPLAYER FIX: LoadCalculator only runs on the server.
@@ -968,23 +997,38 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
     end
     
     if not cutterIsTurnedOn then
-        -- EN: Cutter not working — reset indicators so they don't stay visible.
-        -- UA: Жатка не працює — скидаємо індикатори щоб вони не висіли.
-        spec.loadCalculator:reset() 
+        -- EN: Cutter not working — still tick the plug countdown so it clears even while stopped.
+        --     When plugged the speed drops to ~0, making cutterIsTurnedOn false, so without this
+        --     the timer would never count down and the plug would never clear.
+        -- UA: Жатка не працює — все одно тікаємо таймер засмічення щоб він очищувався навіть стоячи.
+        if spec.loadCalculator.isPlugged then
+            local plugChanged = spec.loadCalculator:updatePlugState(dt)
+            if plugChanged then
+                -- Plug cleared — sync state to clients.
+                spec.data.isPlugged   = false
+                spec.data.plugTimerPct = 0
+                self:raiseDirtyFlags(spec.dataDirtyFlag)
+            end
+            -- EN: Don't return yet — fall through to sync below.
+        end
+
+        -- EN: Reset indicators so they don't stay visible while cutter is off.
+        -- UA: Скидаємо індикатори щоб вони не висіли поки жатка вимкнена.
+        spec.loadCalculator:reset()
         if spec.data then
-            spec.data.load = 0 
+            spec.data.load = 0
             spec.data.cropLoss = 0
             spec.data.tonPerHour = 0
             spec.data.litersPerHour = 0
             spec.data.yield = 0
-        spec.data.recommendedSpeed = 0 -- EN: Hide "/ X.X" from speed display / UA: Приховуємо "/ X.X" з відображення швидкості
+            spec.data.recommendedSpeed = 0
         end
         spec.isSpeedLimitActive = false
-        
+
         -- EN: Sync reset to clients so their HUD clears too.
         -- UA: Синхронізуємо скидання на клієнти щоб їх HUD теж очистився.
         self:raiseDirtyFlags(spec.dataDirtyFlag)
-        
+
         return
     end
     
@@ -1117,12 +1161,23 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
         -- EN: plugTimerPct: 0-100% progress toward a plug, for HUD pre-warning ramp.
         -- UA: plugTimerPct: 0-100% прогрес до засмічення для попереднього попередження HUD.
         spec.data.plugTimerPct     = math.min(100, ((lc.plugTimer or 0) / 10000) * 100)
-        -- EN: Speed limit — if plugged, force 0 km/h regardless of Speed Control tier.
-        -- UA: Ліміт швидкості — при засміченні форсуємо 0 км/год незалежно від рівня апгрейду.
+        -- EN: Speed limit display — only show when actively limiting (speedLimit has headroom below ceiling).
+        --     When the combine is under-loaded the speed climbs toward genuineSpeedLimit; showing that
+        --     climbing number is misleading ("/ 8.0 mph" growing while you drive at 5 mph). We hide it
+        --     once speedLimit reaches 95% of the ceiling — at that point we're not usefully limiting.
+        --     Always show when plugged (forces 0) or when genuinely throttling below ceiling.
+        -- UA: Показуємо ліміт швидкості тільки коли він реально обмежує (нижче за стелю).
         if lc.isPlugged then
             spec.data.recommendedSpeed = 0
         else
-            spec.data.recommendedSpeed = lc:getSpeedLimit()
+            local calcLimit  = lc:getSpeedLimit()
+            local ceiling    = lc.genuineSpeedLimit
+            -- Show limit only when it's meaningfully below the ceiling (actively limiting)
+            if ceiling > 0 and calcLimit < ceiling * 0.95 then
+                spec.data.recommendedSpeed = calcLimit
+            else
+                spec.data.recommendedSpeed = 0
+            end
         end
     end
     
@@ -1313,6 +1368,16 @@ function rhm_Combine:loadFromXMLFile(xmlFile, key, resetVehicles)
     spec.combineMemory.currentSettings.lowerSieve = xmlFile:getValue(cur .. "#lowerSieve", 50)
     spec.combineMemory.currentSettings.rotor      = xmlFile:getValue(cur .. "#rotor", 50)
     spec.combineMemory.upgradeLevel               = xmlFile:getValue(cur .. "#upgradeLevel", 0)
+    -- EN: Blend with store purchase — player may have bought a higher tier from the vehicle store.
+    --     Take the MAX so both purchase paths (in-GUI and store) are honoured across save cycles.
+    -- UA: Поєднуємо з покупкою в магазині — гравець міг купити вищий рівень із магазину.
+    --     Беремо MAX щоб обидва шляхи покупки (GUI і магазин) враховувались між збереженнями.
+    if RHMShopIntegration then
+        local storeLevel = RHMShopIntegration.getUpgradeLevelFromConfig(self)
+        if storeLevel then
+            spec.combineMemory.upgradeLevel = math.max(spec.combineMemory.upgradeLevel, storeLevel)
+        end
+    end
     -- EN: Load the correct 5th parameter key based on machine type.
     --     Grain combines use 'concave'; fall back to '#feeder' for old saves.
     --     Forage/root/cotton use 'feeder'.

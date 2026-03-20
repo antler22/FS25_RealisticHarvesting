@@ -379,8 +379,6 @@ function CombineCalibrationGUI:draw()
                        + (numParams * ui.lineHeight)
                        + ui.lineHeight * 2.2  -- action buttons
                        + ui.lineHeight * 0.8  -- close hint
-                       + ui.sectionGap        -- UPGRADES section header
-                       + ui.lineHeight * 1.4  -- upgrade status + button
                        + harvestReportH
                        + ui.margin * 4
 
@@ -674,54 +672,6 @@ function CombineCalibrationGUI:draw()
     self:drawRect(x + ui.margin, cy, w - ui.margin * 2, 0.001, ui.colors.separator)
     cy = cy - ui.margin * 0.6
 
-    -- ── Upgrade System ──────────────────────────────────────────────────────
-    cy = cy - ui.sectionGap
-    self:drawRect(x, cy + 0.002, w, ui.sectionGap - 0.004, {0, 0, 0, 0.40})
-    setTextBold(true)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextColor(unpack(ui.colors.accent))
-    renderText(x + w * 0.5, cy + 0.006, ui.sectionSize, "UPGRADES")
-
-    -- EN: Show current tier and next purchasable upgrade.
-    cy = cy - ui.lineHeight * 0.8
-    local curName  = CombineMemory.UPGRADE_NAMES[upgradeLevel] or "?"
-    setTextBold(false)
-    setTextAlignment(RenderText.ALIGN_LEFT)
-    setTextColor(unpack(ui.colors.textDim))
-    renderText(x + ui.margin, cy + 0.006, ui.statusSize,
-        string.format("Installed: Tier %d — %s", upgradeLevel, curName))
-
-    -- EN: If max tier, show "Fully Upgraded"; otherwise show Buy button for next tier.
-    local nextTier = upgradeLevel + 1
-    if nextTier <= 4 then
-        local nextCost = CombineMemory.UPGRADE_COSTS[nextTier] or 0
-        local nextName = CombineMemory.UPGRADE_NAMES[nextTier] or "?"
-        local nextDesc = CombineMemory.UPGRADE_DESC[nextTier] or ""
-        local btnLabel = string.format("BUY: %s ($%d)", nextName, nextCost)
-        cy = cy - ui.lineHeight * 0.85
-        self:drawButton(x + ui.margin, cy, w - ui.margin * 2, 0.026, btnLabel, function()
-            local ok, reason = memory:purchaseUpgrade(nextTier)
-            if ok then
-                print(string.format("RHM: [Upgrade] Tier %d purchased successfully", nextTier))
-            else
-                print(string.format("RHM: [Upgrade] Purchase failed: %s", reason or "?"))
-            end
-        end, {0.05, 0.12, 0.20, 0.95})
-        setTextBold(false)
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextColor(0.70, 0.68, 0.65, 0.80)
-        renderText(x + w * 0.5, cy - ui.statusSize - 0.001, ui.statusSize * 0.9, nextDesc)
-    else
-        cy = cy - ui.lineHeight * 0.5
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextColor(0.24, 0.72, 0.47, 1.00)
-        renderText(x + w * 0.5, cy + 0.006, ui.statusSize, "Fully Upgraded")
-    end
-
-    cy = cy - ui.margin * 0.8
-    self:drawRect(x + ui.margin, cy, w - ui.margin * 2, 0.001, ui.colors.separator)
-    cy = cy - ui.margin * 0.6
-
     -- ── Harvest Report (Calibration tier 1+) ────────────────────────────────
     -- EN: Show session stats + grade + reset button when player has at least Calibration upgrade.
     -- UA: Показуємо статистику сесії + оцінку + кнопку скидання при наявності рівня 1+.
@@ -888,14 +838,18 @@ function CombineCalibrationGUI:drawParameterRow(x, y, w, param, label, memory, u
     local statusW   = btnStartX - valEndX - 0.004
 
     -- EN: Determine value color and status text based on optimality.
+    --     Status hints (color coding + text) require Settings Monitoring upgrade (tier 2+).
+    --     Below tier 2, values always render in neutral white with no hint text.
     -- UA: Визначаємо колір значення та текст статусу на основі оптимальності.
+    --     Підказки статусу (кольорове кодування + текст) потребують апгрейду Моніторинг (рівень 2+).
     local valColor, statusText, statusColor
+    local hintsUnlocked = (memory.upgradeLevel or 0) >= 2
 
     if memory.autoSwitchEnabled then
         valColor    = ui.colors.textDim
         statusText  = "auto"
         statusColor = ui.colors.textDim
-    elseif not hasOptimal then
+    elseif not hasOptimal or not hintsUnlocked then
         valColor    = ui.colors.text
         statusText  = ""
         statusColor = ui.colors.textDim
@@ -963,13 +917,18 @@ function CombineCalibrationGUI:drawParameterRow(x, y, w, param, label, memory, u
         -- UA: Трек бару.
         self:drawRect(barX, barY, barW, barH, ui.colors.barBg)
 
-        -- EN: Bar fill (current value).
-        -- UA: Заповнення бару (поточне значення).
+        -- EN: Bar fill (current value). Color-coded only with Settings Monitoring (tier 2+).
+        -- UA: Заповнення бару (поточне значення). Кольорове кодування лише з рівнем 2+.
         local fillPct = math.max(0, math.min(val / 100.0, 1.0))
-        local fillColor = isOptimal and ui.colors.success
-                        or (val < optimal - tolerance and ui.colors.warning or ui.colors.warning)
-        if math.abs(val - optimal) - tolerance > 20 then
-            fillColor = ui.colors.error
+        local fillColor
+        if not hintsUnlocked then
+            fillColor = ui.colors.textDim
+        else
+            fillColor = isOptimal and ui.colors.success
+                            or (val < optimal - tolerance and ui.colors.warning or ui.colors.warning)
+            if math.abs(val - optimal) - tolerance > 20 then
+                fillColor = ui.colors.error
+            end
         end
         self:drawRect(barX, barY, fillPct * barW, barH, fillColor)
 
