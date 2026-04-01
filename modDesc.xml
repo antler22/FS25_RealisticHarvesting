@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
-<modDesc descVersion="106">
+<modDesc descVersion="107">
     <author>exekx</author>
     <manufacturer>exekx</manufacturer>
     <version>1.4.3.0</version>
@@ -690,7 +690,26 @@ Funkciók:
             <pl>Walce wciągające</pl><es>Rodillos de alimentación</es><it>Rulli di alimentazione</it>
             <cz>Vkládací válce</cz><uk>Живильні вальці</uk><ru>Питающие вальцы</ru><hu>Behúzóhengerek</hu>
         </text>
-        
+        <text name="rhm_ui_chop_length">
+            <en>Chop Length</en><de>Häcksellänge</de><fr>Longueur de coupe</fr>
+            <pl>Długość sieczki</pl><uk>Довжина різки</uk>
+        </text>
+        <text name="rhm_ui_kernel_processor">
+            <en>Kernel Processor</en><de>Kornprozessor</de><fr>Processeur de grains</fr>
+            <pl>Procesor ziarna</pl><uk>Процесор зерна</uk>
+        </text>
+        <text name="rhm_ui_accelerator_gap">
+            <en>Accelerator Gap</en><de>BeschleunigerSpalt</de><fr>Jeu accélérateur</fr>
+            <pl>Szczelina przyspieszacza</pl><uk>Зазор прискорювача</uk>
+        </text>
+        <text name="rhm_ui_swath_width">
+            <en>Swath Width</en>
+            <de>Schwadbreite</de>
+            <fr>Largeur de andain</fr>
+            <pl>Szerokość pokosa</pl>
+            <uk>Ширина валка</uk>
+        </text>
+
         <text name="rhm_ui_root_roller">
             <en>Cleaning Rollers</en><de>Reinigungswalzen</de><fr>Rouleaux de nettoyage</fr>
             <pl>Rolki czyszczące</pl><es>Rodillos de limpieza</es><it>Rulli di pulizia</it>
@@ -940,11 +959,11 @@ Funkciók:
         <!-- ── Upgrade tier descriptions ─────────────────────────────────── -->
         <!-- Shop configuration panel section header -->
         <text name="rhm_upgrade_section_title">
-            <en>RH Upgrade</en><de>RH-Upgrade</de><fr>Amélioration RH</fr>
-            <pl>Ulepszenie RH</pl><es>Mejora RH</es><it>Potenziamento RH</it>
-            <cz>RH Upgrade</cz><br>Melhoria RH</br><uk>Апгрейд RH</uk><ru>Апгрейд RH</ru><hu>RH Fejlesztés</hu>
+            <en>Harvest Technology</en><de>Erntетechnologie</de><fr>Technologie de récolte</fr>
+            <pl>Technologia zbioru</pl><es>Tecnología de cosecha</es><it>Tecnologia di raccolta</it>
+            <cz>Technologie sklizně</cz><br>Tecnologia de colheita</br><uk>Технологія збирання</uk><ru>Технология уборки</ru><hu>Betakarítási technológia</hu>
         </text>
-        <text name="rhm_upgrade_tier0_name"><en>No Upgrade</en><de>Kein Upgrade</de><fr>Sans amélioration</fr><pl>Bez ulepszeń</pl><es>Sin mejora</es><it>Nessun upgrade</it><cz>Bez upgradu</cz><br>Sem melhoria</br><uk>Без покращень</uk><ru>Без улучшения</ru><hu>Nincs fejlesztés</hu></text>
+        <text name="rhm_upgrade_tier0_name"><en>No upgrades</en><de>Keine Upgrades</de><fr>Sans amélioration</fr><pl>Bez ulepszeń</pl><es>Sin mejora</es><it>Nessun upgrade</it><cz>Bez upgradu</cz><br>Sem melhoria</br><uk>Без покращень</uk><ru>Без улучшения</ru><hu>Nincs fejlesztés</hu></text>
         <text name="rhm_upgrade_tier1_name"><en>Loss Catch Pan</en><de>Verlustfangwanne</de><fr>Bac récupérateur</fr><pl>Taca zbierająca straty</pl><es>Bandeja recoge pérdidas</es><it>Vassoio raccogli perdite</it><cz>Záchytná pánev</cz><br>Bandeja coletora</br><uk>Піддон для збирання втрат</uk><ru>Поддон сбора потерь</ru><hu>Veszteségfogó tálca</hu></text>
         <text name="rhm_upgrade_tier2_name"><en>Settings Monitoring</en><de>Einstellungsüberwachung</de><fr>Surveillance réglages</fr><pl>Monitorowanie ustawień</pl><es>Monitoreo ajustes</es><it>Monitoraggio impostazioni</it><cz>Sledování nastavení</cz><br>Monitoramento config.</br><uk>Моніторинг налаштувань</uk><ru>Мониторинг настроек</ru><hu>Beállítás-felügyelet</hu></text>
         <text name="rhm_upgrade_tier3_name"><en>Speed Automation</en><de>Geschwindigkeitsautomatik</de><fr>Automatisation vitesse</fr><pl>Automatyzacja prędkości</pl><es>Automatización velocidad</es><it>Automazione velocità</it><cz>Automatizace rychlosti</cz><br>Automação velocidade</br><uk>Автоматизація швидкості</uk><ru>Автоматизация скорости</ru><hu>Sebességautomatika</hu></text>
@@ -955,5 +974,164 @@ Funkciók:
         <text name="rhm_hint_hdr_loss"><en>Hdr loss — reduce speed</en><de>Schn.verlust — langsamer</de><fr>Perte hdr — réduire vitesse</fr><pl>Str. żniwna — zwolnij</pl><es>Pérd. cap — reducir vel.</es><it>Perd. tes — ridurre vel.</it><cz>Ztr. hdr — zpomalte</cz><br>Perd. col — reduzir vel.</br><uk>Втр. жтк — знизьте швидкість</uk><ru>Пот. жтк — снизьте скорость</ru><hu>Fejveszteség — lassítson</hu></text>
         <text name="rhm_hint_check_settings"><en>Check settings for crop</en><de>Einstellungen prüfen</de><fr>Vérifier réglages culture</fr><pl>Sprawdź ustawienia</pl><es>Revisar ajustes cultivo</es><it>Controlla impostazioni</it><cz>Zkontrolujte nastavení</cz><br>Verificar configurações</br><uk>Перевірте налаштування</uk><ru>Проверьте настройки</ru><hu>Ellenőrizze a beállításokat</hu></text>
         <text name="rhm_hint_speed_up"><en>Under-utilized — increase speed</en><de>Unterausgelastet — schneller!</de><fr>Sous-utilisé — accélérer</fr><pl>Niedobciążony — przyspiesz</pl><es>Bajo uso — aumentar vel.</es><it>Sotto-utilizzato — accelerare</it><cz>Nedostatečné zatížení — zrychlete</cz><br>Subutilizado — aumentar vel.</br><uk>Недозавантажений — збільшіть швидкість</uk><ru>Недогруженный — ускорьтесь</ru><hu>Kihasználatlan — gyorsítson</hu></text>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!-- ── In-Game Help Pages (registered via Lua, textures in /textures/help/) -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+
+        <!-- Shared category label and main title shown in the help menu list -->
+        <text name="rhm_help_category">
+            <en><![CDATA[Realistic Harvesting]]></en>
+        </text>
+        <text name="rhm_help_title">
+            <en><![CDATA[Realistic Harvesting — Field Guide]]></en>
+        </text>
+
+        <!-- ── Page 1: HUD Overview ─────────────────────────────────────── -->
+        <text name="rhm_help_hud_title">
+            <en><![CDATA[1. Reading the HUD]]></en>
+        </text>
+        <text name="rhm_help_hud_1">
+            <en><![CDATA[The HUD overlay displays live combine data as you harvest. Each row shows a different metric:
+
+ENGINE LOAD — How hard your engine is working as a percentage of its rated capacity. Keep this between 85–100% for peak efficiency. Above 100% means you are overloading the machine and crop losses will begin.
+
+SPEED — Your current ground speed. The mod may reduce speed automatically once you own the Speed Automation upgrade (Tier 3).
+
+YIELD — Estimated yield for the current field area (t/ha or bu/ac). This is a rolling estimate updated in real time as you cut.
+
+PRODUCTIVITY — Tonnes or bushels per hour passing through the machine right now.
+
+CROP LOSS — Percentage of harvestable grain being lost out the back of the machine. Great = under 0.5%, Good = under 1%, Worrying = under 2%, Bad = 2%+.]]>
+            </en>
+        </text>
+        <text name="rhm_help_hud_2">
+            <en><![CDATA[SEPARATOR LOSS (Thr) and CLEANING LOSS (Cln) — Visible once you own the Loss Catch Pan upgrade (Tier 1). These measure grain escaping through the threshing rotor and cleaning shoe respectively.
+
+HEADER LOSS (Hdr) — Grain shaken off or missed by the cutting platform. Reduce speed in laid or tangled crops.
+
+PLUG RISK / PLUGGED — Appears when the rotor is building toward a blockage. Slow down immediately if you see PLUG RISK. If PLUGGED appears, reverse and clear before resuming.
+
+The HUD can be repositioned by right-clicking and dragging. Individual rows can be toggled off in the mod settings (ESC → Settings → Game tab).]]>
+            </en>
+        </text>
+
+        <!-- ── Page 2: Combine Calibration ─────────────────────────────── -->
+        <text name="rhm_help_calibration_title">
+            <en><![CDATA[2. Combine Calibration]]></en>
+        </text>
+        <text name="rhm_help_calibration_1">
+            <en><![CDATA[Open the Calibration Panel with RShift+K while sitting in a combine. This gives you direct control over the five core separator and cleaning parameters:
+
+FAN — Controls airflow through the cleaning shoe. Too low = grain carries over into the tank with chaff. Too high = good grain blows out the back.
+
+ROTOR SPEED — Governs how aggressively grain is threshed from the crop. Too slow = incomplete threshing. Too fast = grain cracking and excessive losses.
+
+UPPER SIEVE — The coarse upper screen. Opens or closes to let more or less material through to the lower sieve.
+
+LOWER SIEVE — The fine lower screen. Primarily responsible for the cleanliness of grain entering the tank.
+
+FEEDER / CONCAVE — Controls the gap between the threshing drum and the concave bar. Wider = gentler on crop, narrower = more aggressive threshing.]]>
+            </en>
+        </text>
+        <text name="rhm_help_calibration_2">
+            <en><![CDATA[The stats bar at the bottom shows your measured Separator and Cleaning losses in real time as you harvest. Use this feedback to fine-tune settings for the current crop and conditions.
+
+LOAD BUTTON — Automatically configures all five parameters to the recommended baseline for the current crop type. Use this as a starting point, then fine-tune.
+
+Once you own the Full Automation upgrade (Tier 4), the Load button becomes AUTO. In AUTO mode the combine adjusts settings on the fly as crop density changes.
+
+Settings are saved per machine and persist between sessions. In multiplayer, only the combine operator can change settings; changes are broadcast to all connected players automatically.]]>
+            </en>
+        </text>
+
+        <!-- ── Page 3: Upgrade Tiers ────────────────────────────────────── -->
+        <text name="rhm_help_upgrades_title">
+            <en><![CDATA[3. Upgrade Tiers]]></en>
+        </text>
+        <text name="rhm_help_upgrades_1">
+            <en><![CDATA[Each combine can be upgraded in the shop. Upgrades unlock progressively more powerful features. There are five tiers:
+
+TIER 0 — Base mod behaviour. Engine load is calculated, and total crop loss is shown in the HUD. The calibration panel is available but no individual loss breakdown is visible yet.
+
+TIER 1 — Loss Catch Pan. Installs physical grain loss sensors. Separator (Thr), Cleaning (Cln), and Header (Hdr) losses now appear as separate rows in the HUD. You can see exactly where grain is escaping.
+
+TIER 2 — Settings Monitoring. Adds the calibration stats bar showing live measured separator and cleaning loss percentages. The panel also shows performance hints (slow down, check settings, etc.).
+
+TIER 3 — Speed Automation. The combine can now automatically reduce forward speed when engine load approaches the target threshold. This prevents overloading without requiring constant manual throttle adjustment.
+
+TIER 4 — Full Automation. The calibration panel gains an AUTO mode. The machine continuously adjusts fan, rotor, and sieves in response to changing crop density and moisture.]]>
+            </en>
+        </text>
+
+        <!-- ── Page 4: Crop Loss System ─────────────────────────────────── -->
+        <text name="rhm_help_croploss_title">
+            <en><![CDATA[4. Crop Loss Model]]></en>
+        </text>
+        <text name="rhm_help_croploss_1">
+            <en><![CDATA[Crop losses in this mod are driven by two independent factors:
+
+SETTINGS DEVIATION — If your separator and cleaning settings are mismatched for the current crop, grain will escape regardless of how fast you are going. Even at 50% load, wrong settings mean measurable losses. This is why calibration matters.
+
+ENGINE OVERLOAD — At exactly 100% load or below, a well-calibrated combine produces no overload-related losses. Once load exceeds 100%, a quadratic loss penalty kicks in. At 115%+ a steeper linear spike is added on top. The formula rewards staying under the threshold rather than rewarding a specific target.
+
+COMBINED EFFECT — The two factors stack. Mismatched settings AND high load produce the worst losses. Perfect settings AND low load produce zero losses.]]>
+            </en>
+        </text>
+        <text name="rhm_help_croploss_2">
+            <en><![CDATA[DIFFICULTY SETTING (ESC → Settings → Game tab):
+
+Arcade — Loss multiplier 0.5×. The combine is very forgiving. Good for learning the system or for a relaxed gameplay session.
+
+Normal — Loss multiplier 1×. Realistic penalties for poor calibration and overloading.
+
+Realistic — Loss multiplier 2×. Small deviations from optimal settings cause significant losses. Intended for experienced players who want a true challenge.
+
+The Crop Loss feature can be disabled entirely from the mod settings menu if you only want the yield/load monitoring without the loss simulation.]]>
+            </en>
+        </text>
+
+        <!-- ── Page 5: Forage Harvesting ────────────────────────────────── -->
+        <text name="rhm_help_forage_title">
+            <en><![CDATA[5. Forage Harvesters]]></en>
+        </text>
+        <text name="rhm_help_forage_1">
+            <en><![CDATA[Forage harvesters (self-propelled choppers) are supported with a dedicated load model.
+
+ENGINE LOAD — Calculated from mass throughput (kg/sec) relative to the machine's rated horsepower. Chopper headers are capacity-limited differently from grain headers, so the load factor is adjusted automatically.
+
+YIELD — Displayed in t/ha or t/ac depending on your unit setting. Because forage harvesters do not use a grain tank, yield is back-calculated from cut area and the crop's density settings. If you are using a pickup header (swathing), you must enter the original swath width manually in the Calibration Panel so yield can be computed correctly.
+
+CHOPPER SETTINGS — The calibration panel for forage harvesters shows Chop Length (kernel processor gap / feed roll speed) instead of the grain combine's fan/sieve parameters. Adjust these for the crop type and desired cut length.]]>
+            </en>
+        </text>
+
+        <!-- ── Page 6: Session Analytics ───────────────────────────────── -->
+        <text name="rhm_help_report_title">
+            <en><![CDATA[6. Harvest Report]]></en>
+        </text>
+        <text name="rhm_help_report_1">
+            <en><![CDATA[The Harvest Report shows a summary of the current harvesting session. Open the Calibration Panel (RShift+K) and switch to the Report tab.
+
+TIME — Total time spent actively cutting during this session.
+
+AREA — Total area harvested in ha or ac.
+
+YIELD — Average yield across the session area.
+
+AVG LOAD / PEAK LOAD — Mean and maximum engine load recorded during the session. If peak load is significantly above 100%, you spent time overloading the machine.
+
+CROP LOSS GRADE — An overall rating for the session based on average total loss percentage:
+  Great  — under 0.5%
+  Good   — under 1.0%
+  Worrying — under 2.0%
+  Bad    — 2.0% or higher
+
+PLUGS — Number of rotor plug events during the session. Each plug represents a preventable throughput interruption.
+
+Press RESET SESSION to start fresh counters for a new field or comparison run.]]>
+            </en>
+        </text>
+
     </l10n>
 </modDesc>

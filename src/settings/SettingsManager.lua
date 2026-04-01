@@ -19,9 +19,10 @@ SettingsManager.XMLTAG = "realisticHarvestManager"
 SettingsManager.SERVER_SETTINGS = {
     "difficultyMotor",
     "difficultyLoss",
-    "enableSpeedLimit",
     "enableCropLoss",
+    "enableMoisture",
     "enableIndependentLaunch"
+    -- EN: enableSpeedLimit removed — speed automation is now gated by upgrade level 3 only.
 }
 
 -- EN: List of client-side setting keys (personal, per-player, HUD-related).
@@ -34,6 +35,7 @@ SettingsManager.CLIENT_SETTINGS = {
     "showCropLoss",
     "showSpeed",
     "showLoadWarnings",
+    "showMoisture",
     "hudOffsetX",
     "hudOffsetY",
     "hudPosX",
@@ -50,12 +52,13 @@ SettingsManager.defaultConfig = {
     showHUD = true,
     showYield = true,
     showSpeedometer = true,
-    enableSpeedLimit = true,
     enableCropLoss = false,
+    enableMoisture = true,
     enableIndependentLaunch = true,
     hudOffsetX = 0,
     hudOffsetY = 350,
     unitSystem = 1
+    -- EN: enableSpeedLimit removed — speed automation is now gated by upgrade level 3 only.
 }
 
 -- EN: Creates a new SettingsManager instance.
@@ -132,10 +135,10 @@ function SettingsManager:loadServerSettings(settingsObject)
             end
             xml:delete()
 
-            print(string.format("RHM: [Load] Loaded values - Motor: %s, Loss: %s, SpeedLimit: %s",
+            print(string.format("RHM: [Load] Loaded values - Motor: %s, Loss: %s, CropLoss: %s",
                 tostring(settingsObject.difficultyMotor),
                 tostring(settingsObject.difficultyLoss),
-                tostring(settingsObject.enableSpeedLimit)))
+                tostring(settingsObject.enableCropLoss)))
 
             -- EN: MIGRATION: If split difficulty fields are missing, try reading the legacy "difficulty" key.
             -- UA: МІГРАЦІЯ: Якщо роздільні поля відсутні, спробуємо зчитати застарілий ключ "difficulty".
@@ -220,11 +223,11 @@ function SettingsManager:saveServerSettings(settingsObject)
     end
 
     print(string.format("RHM: [Save] Saving server settings to: %s", xmlPath))
-    print(string.format("RHM: [Save] Values - Motor: %s, Loss: %s, SpeedLimit: %s, CropLoss: %s",
+    print(string.format("RHM: [Save] Values - Motor: %s, Loss: %s, CropLoss: %s, IndepLaunch: %s",
         tostring(settingsObject.difficultyMotor),
         tostring(settingsObject.difficultyLoss),
-        tostring(settingsObject.enableSpeedLimit),
-        tostring(settingsObject.enableCropLoss)))
+        tostring(settingsObject.enableCropLoss),
+        tostring(settingsObject.enableIndependentLaunch)))
 
     local xml = XMLFile.create("RHM_ServerConfig", xmlPath, self.XMLTAG)
     if xml then

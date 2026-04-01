@@ -5,12 +5,13 @@
 --     UA: Визначає, які модулі мають право виводити відлагоджувальну інформацію в лог гри.
 RHM_Debug = {}
 
--- EN: Master switch. If false — all modules are silent regardless of individual settings.
--- UA: Головний вимикач. Якщо false — всі модулі мовчать незалежно від їхніх індивідуальних налаштувань.
-RHM_Debug.MASTER_ENABLE = false
+-- EN: Master switch. Set to true when you need a diagnostic log session, false for release.
+--     DEV: Enabled for store integration debugging — flip back to false before publishing.
+-- UA: Головний вимикач. true — для діагностики, false — для релізу.
+RHM_Debug.MASTER_ENABLE = true
 
--- EN: Per-module debug toggles. Set to true for the module you want to debug.
--- UA: Налаштування по окремих модулях. Встановіть true для модуля, який хочете відлагодити.
+-- EN: Per-module debug toggles. Only active when MASTER_ENABLE = true.
+-- UA: Налаштування по окремих модулях. Активні лише при MASTER_ENABLE = true.
 RHM_Debug.Modules = {
     -- EN: Main manager (game load, HUD, initialization)
     -- UA: Основний менеджер (завантаження гри, HUD, ініціалізація)
@@ -18,11 +19,11 @@ RHM_Debug.Modules = {
 
     -- EN: Combine specialization logic (crop detection, speed limiting)
     -- UA: Логіка комбайна (відбір культур, обмеження швидкості)
-    Combine = true,
+    Combine = false,
 
     -- EN: Load calculator (yield, crop types, engine load % and math)
     -- UA: Калькулятор навантаження (врожайність, типи культур, навантаження % і математика)
-    LoadCalculator = true,
+    LoadCalculator = false,
 
     -- EN: Combine memory (fan, rotor, sieve setting changes)
     -- UA: Пам'ять комбайна (зміна налаштувань вентилятора, ротора і тд)
@@ -35,6 +36,11 @@ RHM_Debug.Modules = {
     -- EN: Menu UI (settings menu open/close, clicks)
     -- UA: Інтерфейс меню (відкриття налаштувань, кліки)
     UI = false,
+
+    -- EN: Store/shop integration — logs every step of upgrade tier injection and vehicle config read-back.
+    --     Produces a full diagnostic dump so we can pinpoint exactly where the store pipeline breaks.
+    -- UA: Інтеграція з магазином — логує кожен крок вставки конфігурацій і зчитування при завантаженні.
+    Shop = true,
 }
 
 -- EN: Checks whether debug output is allowed for a specific module.

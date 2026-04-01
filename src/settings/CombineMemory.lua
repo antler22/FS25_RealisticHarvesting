@@ -19,7 +19,7 @@ local CombineMemory_mt = Class(CombineMemory)
 -- ============================================================================
 CombineMemory.UPGRADE_COSTS = { [1] = 2500, [2] = 5000, [3] = 10000, [4] = 20000 }
 CombineMemory.UPGRADE_NAMES = {
-    [0] = "No Upgrade",
+    [0] = "No upgrades",
     [1] = "Loss Catch Pan",
     [2] = "Settings Monitoring",
     [3] = "Speed Automation",
@@ -47,8 +47,11 @@ function CombineMemory.new(combine, machineType)
 
     self.debug = RHM_Debug and RHM_Debug.isEnabled("CombineMemory") or false
 
-    -- EN: Dynamically initialize only the parameters for this machine type (not all 5 for every type).
-    -- UA: Динамічно ініціалізуємо тільки параметри для цього типу машини (не всі 5 для кожного типу).
+    -- EN: Pre-crop neutral state: 50% on all params. This is only held until the first crop
+    --     is detected, at which point switchCrop() replaces it with the crop-specific baseline
+    --     (~1 tolerance-step off optimal, giving ~2.5% total loss as a starting point).
+    -- UA: Нейтральний стан до визначення культури: 50% на всіх параметрах. Це тимчасово —
+    --     як тільки визначається культура, switchCrop() застосовує базові налаштування для неї.
     self.currentSettings = {}
     local activeParams = CombineSettingsDatabase:getParamsForMachineType(self.machineType)
     for _, paramName in ipairs(activeParams) do
@@ -58,13 +61,14 @@ function CombineMemory.new(combine, machineType)
 
     self.currentYieldCalibration = 1.0
 
-    -- EN: Upgrade level: 0=None, 1=Calibration($2500), 2=Monitor($5000), 3=AutoPilot($20000).
-    --     Each tier is purchased once per combine and persists in the savegame.
-    -- UA: Рівень апгрейду: 0=Відсутній, 1=Калібрування, 2=Моніторинг, 3=Автопілот.
+    -- EN: Upgrade level: 0=None, 1=Loss Catch Pan, 2=Settings Monitoring, 3=Speed Automation, 4=Full Automation.
+    --     Purchased once per combine via the in-game shop; persists in savegame.
+    -- UA: Рівень апгрейду: 0=Відсутній, 1=Піддон, 2=Моніторинг, 3=Автоматика швидкості, 4=Повна автоматика.
     self.upgradeLevel = 0
 
     self.mode = "AUTO"            -- EN: Starts in AUTO mode by default / UA: За замовчуванням починає в AUTO режимі
     self.autoSwitchEnabled = true -- EN: Auto-applies optimal settings on crop change / UA: Автоматично застосовує оптимальні при зміні культури
+    self.swathWidth = nil  -- EN: User-defined swath/pickup width override (nil = use header width). Meters.
     self.showWarnings = true      -- EN: Show warnings for incorrect settings / UA: Показувати попередження при неправильних налаштуваннях
 
     return self
@@ -179,46 +183,45 @@ function CombineMemory:autoConfigureForCrop(cropName, forceOptimal)
     end
 
     if forceOptimal and optimalSettings then
-        -- EN: AUTO mode: add small random deviation around the optimal value.
-        --     Randomness is generated ONLY on the server (to prevent server/client desync).
-        -- UA: AUTO режим: додаємо невелике випадкове відхилення від оптимального значення.
-        --     Випадковість генерується ТІЛЬКИ на сервері (щоб уникнути розсинхронізації).
-        local function getAutoValue(optimal, tolerance)
-            local deviation = 0
-            if (g_server ~= nil) then
-                -- EN: Deviation slightly larger than tolerance to make AUTO good but not always perfect.
-                -- UA: Відхилення трохи більше за допуск, щоб AUTO був хорошим, але не завжди ідеальним.
-                local maxDev = tolerance + 2
-                deviation = math.random(0, maxDev)
-                local sign = math.random() > 0.5 and 1 or -1
-                deviation = sign * deviation
-            end
-            local value = optimal + deviation
-            return math.max(0, math.min(100, value))
-        end
-
+        -- EN: AUTO mode: apply exact optimal values for the current crop.
+        --     No randomness — AUTO is a deterministic on/off toggle. The player sees exactly
+        --     optimal settings snap in immediately when AUTO is enabled.
+        -- UA: AUTO режим: застосовуємо точні оптимальні значення для культури. Без випадковості.
         local activeParams = CombineSettingsDatabase:getParamsForMachineType(self.machineType)
         for _, pName in ipairs(activeParams) do
             if optimalSettings[pName] then
-                local tol = optimalSettings[pName].tolerance or 5
-                self.currentSettings[pName] = getAutoValue(optimalSettings[pName].optimal, tol)
+                self.currentSettings[pName] = math.max(0, math.min(100, optimalSettings[pName].optimal))
             else
                 self.currentSettings[pName] = 50
             end
         end
 
         self.mode = "AUTO"
-        if self.debug then print(string.format("RHM: [OK] Auto settings applied for: %s (forceOptimal=%s)", cropName, tostring(forceOptimal))) end
+        if self.debug then
+            print(string.format("RHM: [AUTO] Exact optimal settings applied for: %s", tostring(cropName)))
+        end
     else
-        -- EN: RESET mode: set all active params to the neutral 50% position.
-        -- UA: Режим RESET: встановлюємо всі активні параметри на нейтральну позицію 50%.
+        -- EN: BASELINE mode: set each param one tolerance-step off optimal in the direction
+        --     of the most common novice mistake for that parameter type. This gives ~2.5% total
+        --     loss ("Good" rating) — playable out of the box, but with clear room to improve
+        --     through manual tuning or by purchasing upgrades. Falls back to 50% if the crop
+        --     has no database entry (unknown mod crop).
+        -- UA: Базовий режим: кожен параметр відхилений від оптимального на один крок tolerance.
+        --     Дає ~2.5% загальних втрат ("Good") — можна грати одразу, але є куди покращувати.
         local activeParams = CombineSettingsDatabase:getParamsForMachineType(self.machineType)
+        local baseline = CombineSettingsDatabase:getBaselineForCrop(cropName)
         for _, pName in ipairs(activeParams) do
-            self.currentSettings[pName] = 50
+            self.currentSettings[pName] = (baseline and baseline[pName]) or 50
         end
 
         self.mode = "MANUAL"
-        if self.debug then print(string.format("RHM: [OK] Default settings (50%%) applied for: %s", cropName)) end
+        if self.debug then
+            if baseline then
+                print(string.format("RHM: [OK] Baseline settings applied for: %s (novice offset from optimal)", cropName))
+            else
+                print(string.format("RHM: [OK] Default settings (50%%) applied for: %s (unknown crop)", cropName))
+            end
+        end
     end
 
     -- EN: Reset yield calibration when switching to a new crop without an existing profile.
@@ -232,21 +235,25 @@ function CombineMemory:autoConfigureForCrop(cropName, forceOptimal)
     return true
 end
 
--- EN: Sends a network request to the server to apply AUTO settings for the current crop.
---     In singleplayer, processes the event locally.
--- UA: Надсилає мережевий запит на сервер для застосування AUTO налаштувань для поточної культури.
---     В однокористувацькій грі обробляє подію локально.
+-- EN: Toggles AUTO mode on/off.
+--     If currently MANUAL → switch to AUTO and apply optimal settings immediately.
+--     If currently AUTO   → switch to MANUAL (player takes control).
+--     Sends a network event so the server applies the change authoritatively.
+-- UA: Перемикає режим AUTO вкл/викл. MANUAL→AUTO: застосовує оптимальні відразу. AUTO→MANUAL: гравець керує.
 function CombineMemory:requestAutoSettings()
-    if not self.currentCrop then return end
-
     if g_client and self.combine then
-        local event = CombineSettingsEvent.new(self.combine, "AUTO_SET", 1)
+        local targetIsAuto = (self.mode ~= "AUTO")  -- EN: Toggle: if not AUTO, turn it on; if AUTO, turn off.
+        local eventType    = targetIsAuto and "AUTO_SET" or "MANUAL_SET"
+        local event        = CombineSettingsEvent.new(self.combine, eventType, 1)
         if not g_server then
             g_client:getServerConnection():sendEvent(event)
         else
-            event:run(nil) -- EN: Singleplayer: process locally / UA: Однокористувацька: обробляємо локально
+            event:run(nil)
         end
-        if self.debug then print("RHM: [Sync] Requested AUTO settings from server") end
+        if self.debug then
+            print(string.format("RHM: [AUTO] Toggle requested: %s → %s",
+                self.mode, targetIsAuto and "AUTO" or "MANUAL"))
+        end
     end
 end
 
@@ -318,19 +325,30 @@ end
 -- UA: Оцінює всі поточні налаштування відносно оптимальних значень бази даних для культури.
 --     Повертає окремо штрафи за ефективність (швидкість) і втрати врожаю, плюс таблицю попереджень.
 --     Подача/Ротор впливають на ефективність (пропускну здатність), Вентилятор/Решета — на втрати (якість очищення).
+-- EN: Evaluates current combine settings against optimal values for a given crop.
+--     Returns four values:
+--       effPenalty  — throughput/speed penalty (%) from rotor/concave/feeder misadjustment.
+--       thrLoss     — threshing loss (%) from rotor/concave: grain that exits with straw unthreshed.
+--       cleanLoss   — cleaning loss (%) from fan/sieves: grain blown over or falling through the shoe.
+--       warnings    — table of out-of-tolerance parameters for hint display.
+--
+--     Physical routing rationale:
+--       feeder       → efficiency only   (feed rate affects throughput, not directly grain loss)
+--       rotor/concave→ efficiency + threshing loss (dual effect: slow/uneven threshing drops grain)
+--       fan/sieves   → cleaning loss only (separation quality in the cleaning shoe)
+-- UA: Оцінює поточні налаштування відносно оптимальних для культури.
+--     Повертає чотири значення: effPenalty, thrLoss, cleanLoss, warnings.
 function CombineMemory:checkSettingsForCrop(cropName)
     local optimalSettings = CombineSettingsDatabase:getSettingsForCrop(cropName)
+    if not optimalSettings then return 0, 0, 0, {} end
 
-    if not optimalSettings then
-        return 0, 0, {}
-    end
-
-    local warnings = {}
-    local efficiencyScore = 0  -- EN: Impacts throughput/speed / UA: Впливає на пропускну здатність/швидкість
-    local lossScore = 0        -- EN: Impacts direct crop loss / UA: Впливає на прямі втрати врожаю
-    
-    local effParamCount = 0
-    local lossParamCount = 0
+    local warnings     = {}
+    local effScore     = 0   -- EN: Throughput speed penalty / UA: Штраф пропускної здатності
+    local thrScore     = 0   -- EN: Threshing loss (rotor/concave) / UA: Втрати обмолоту (ротор/дека)
+    local cleanScore   = 0   -- EN: Cleaning loss (fan/sieves) / UA: Втрати очистки (вентилятор/решета)
+    local effCount     = 0
+    local thrCount     = 0
+    local cleanCount   = 0
 
     for param, value in pairs(self.currentSettings) do
         if optimalSettings[param] then
@@ -340,69 +358,81 @@ function CombineMemory:checkSettingsForCrop(cropName)
 
             local score = 0
             if deviation <= tolerance then
-                -- EN: GREEN ZONE: linear curve from -0.5 (perfect center) to +0.5 (edge of tolerance).
-                -- UA: ЗЕЛЕНА ЗОНА: лінійна крива від -0.5 (ідеальний центр) до +0.5 (межа допуску).
+                -- EN: GREEN ZONE: slight bonus at perfect centre, fades to 0 at tolerance edge.
                 score = (deviation / tolerance - 0.5) * 1.0
             else
-                -- EN: RED ZONE: linear increase from +0.5, capped at 6.0 (extreme maladjustment).
-                -- UA: ЧЕРВОНА ЗОНА: лінійне зростання від +0.5, обмежено до 6.0 (крайнє розрегулювання).
+                -- EN: RED ZONE: linear penalty above tolerance, capped at 6.0.
                 local excess = deviation - tolerance
                 score = math.min(6.0, 0.5 + excess * 0.33)
-
                 table.insert(warnings, {
-                    param    = param,
-                    current  = value,
-                    optimal  = optimal,
+                    param     = param,
+                    current   = value,
+                    optimal   = optimal,
                     deviation = deviation,
-                    penalty  = score,
+                    penalty   = score,
                 })
             end
 
-            -- EN: Route penalty to the appropriate physical effect based on parameter type.
-            --     Rotor/Feeder/Concave → efficiency (threshing throughput).
-            --     Fan/Sieves → loss (separation quality).
-            --     Concave (grain) affects threshing intensity — too open = unthreshed grain (loss),
-            --     too tight = grain cracking (efficiency). We route it to efficiency as a simplification.
-            -- UA: Направляємо штраф до відповідного фізичного ефекту залежно від параметру.
-            if param == "feeder" or param == "rotor" or param == "concave" then
-                efficiencyScore = efficiencyScore + score
-                effParamCount = effParamCount + 1
+            if param == "feeder" then
+                -- EN: Feed rate → throughput only.
+                effScore = effScore + score
+                effCount = effCount + 1
+            elseif param == "rotor" or param == "concave" then
+                -- EN: Rotor/concave → both throughput AND threshing loss (dual physical effect).
+                effScore = effScore + score ;  effCount = effCount + 1
+                thrScore = thrScore + score ;  thrCount = thrCount + 1
             elseif param == "fan" or param == "upperSieve" or param == "lowerSieve" then
-                lossScore = lossScore + score
-                lossParamCount = lossParamCount + 1
+                -- EN: Fan/sieves → cleaning loss only.
+                cleanScore = cleanScore + score
+                cleanCount = cleanCount + 1
+            elseif param == "chopLength" or param == "kernelProcessor" then
+                -- EN: Forage cut/processing quality → nutritional loss (mapped to cleanScore channel).
+                cleanScore = cleanScore + score
+                cleanCount = cleanCount + 1
+            elseif param == "acceleratorGap" then
+                -- EN: ASYMMETRIC — direction of deviation matters.
+                --   Too tight (value < optimal): rotor must push crop through a narrower gap → extra
+                --     power draw → speed penalty. Real machines slow down under the extra load.
+                --   Too open  (value > optimal): crop is under-accelerated → doesn't reach the wagon,
+                --     silage spills at the spout → processing/discharge quality penalty. No power
+                --     cost, so no speed hit (the engine actually has headroom to go faster).
+                --   At optimal: balanced — discharge quality bonus, no speed penalty.
+                -- UA: АСИМЕТРИЧНО — напрямок відхилення визначає канал штрафу.
+                --   Занадто тісний зазор → зайве навантаження двигуна → штраф швидкості.
+                --   Занадто великий зазор → слабке прискорення маси → штраф якості виходу.
+                local signed = value - optimal  -- negative = too tight, zero/positive = optimal or too open
+                if signed < 0 then
+                    -- Gap too tight → power cost → speed penalty
+                    effScore   = effScore   + score ;  effCount   = effCount   + 1
+                else
+                    -- Optimal or gap too open → discharge quality penalty (or bonus at centre)
+                    cleanScore = cleanScore + score ;  cleanCount = cleanCount + 1
+                end
             else
-                efficiencyScore = efficiencyScore + (score * 0.5)
-                lossScore = lossScore + (score * 0.5)
-                effParamCount = effParamCount + 0.5
-                lossParamCount = lossParamCount + 0.5
+                -- EN: Unknown param → split evenly across all three channels.
+                effScore   = effScore   + score * 0.5 ;  effCount   = effCount   + 0.5
+                thrScore   = thrScore   + score * 0.3 ;  thrCount   = thrCount   + 0.3
+                cleanScore = cleanScore + score * 0.2 ;  cleanCount = cleanCount + 0.2
             end
         end
     end
 
-    -- EN: Normalize scores so that machines with fewer parameters (e.g., forage/root)
-    --     can still reach the same max bonus and max penalty as 5-parameter grain combines.
-    -- UA: Нормалізуємо бали, щоб машини з меншою кількістю параметрів (напр., форажні/бурякові)
-    --     могли досягати тих же максимальних бонусів/штрафів, що й 5-параметрові зернові комбайни.
-    if effParamCount > 0 then
-        -- Grain combines have 2 efficiency params (feeder, rotor). We scale to 2.
-        efficiencyScore = efficiencyScore * (2.0 / effParamCount)
-    end
-    
-    if lossParamCount > 0 then
-        -- Grain combines have 3 loss params (fan, upperSieve, lowerSieve). We scale to 3.
-        lossScore = lossScore * (3.0 / lossParamCount)
+    -- EN: Normalize so that machines with fewer parameters reach the same scale as a
+    --     5-parameter grain combine (2 eff params, 2 thr params, 3 clean params).
+    if effCount   > 0 then effScore   = effScore   * (2.0 / effCount)   end
+    if thrCount   > 0 then thrScore   = thrScore   * (2.0 / thrCount)   end
+    if cleanCount > 0 then cleanScore = cleanScore * (3.0 / cleanCount) end
+
+    local effPenalty = math.max(-1.0, math.min(effScore,   20.0))
+    local thrLoss    = math.max(-0.5, math.min(thrScore,   20.0))
+    local cleanLoss  = math.max(-1.5, math.min(cleanScore, 20.0))
+
+    if RHM_Debug and RHM_Debug.isEnabled("LoadCalculator") then
+        print(string.format("RHM [checkSettings] crop=%s  eff=%.2f  thr=%.2f  clean=%.2f  warns=%d",
+            tostring(cropName), effPenalty, thrLoss, cleanLoss, #warnings))
     end
 
-    -- EN: Clamp penalties to reasonable bounds.
-    --     Efficiency: max bonus is -1.0%, max penalty is 20%.
-    --     Loss: max bonus is -1.5%, max penalty is 20%.
-    -- UA: Обмежуємо штрафи до розумних меж.
-    --     Ефективність: максимальний бонус -1.0%, максимальний штраф 20%.
-    --     Втрати: максимальний бонус -1.5%, максимальний штраф 20%.
-    local efficiencyPenalty = math.max(-1.0, math.min(efficiencyScore, 20.0))
-    local lossPenalty = math.max(-1.5, math.min(lossScore, 20.0))
-
-    return efficiencyPenalty, lossPenalty, warnings
+    return effPenalty, thrLoss, cleanLoss, warnings
 end
 
 -- EN: Sets a single parameter value (0-100) and switches to MANUAL mode.

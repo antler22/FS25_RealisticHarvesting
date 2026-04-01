@@ -217,24 +217,82 @@ function LoadCalculator:getBasePerformanceFromPower(vehicle)
     
     local coef = 0.035  -- EN: Standard coefficient for grain / UA: Стандартний коефіцієнт для зерна
     local power = 0
-    
-    local keyCategory = "vehicle.storeData.category"
-    local category = vehicle.xmlFile:getValue(keyCategory)
-    
-    if category == "forageHarvesters" or category == "forageHarvesterCutters" then
-        coef = 0.051  -- Forage harvesters: calibrated to JD 9900 (956hp) ~400 t/hr corn silage
-    elseif category == "beetVehicles" or category == "beetHarvesting" then
+
+    -- EN: Use g_storeManager to get the category string — vehicle.xmlFile:getValue() returns a
+    --     Lua table in FS25 (not a string), so string comparisons against it always fail.
+    -- UA: Використовуємо g_storeManager для рядка категорії — xmlFile:getValue() повертає таблицю.
+    local category = nil
+    if g_storeManager then
+        local storeItem = g_storeManager:getItemByXMLFilename(vehicle.configFileName)
+        -- EN: Normalize to lowercase — storeItem.categoryName may be any case depending on mod
+        --     (e.g. "FORAGEHARVESTERS" vs "forageHarvesters"). Strip spaces too for safety.
+        -- UA: Нормалізуємо до нижнього регістру — categoryName може бути будь-якого регістру.
+        category = storeItem and storeItem.categoryName and storeItem.categoryName:lower():gsub("%s","") or nil
+    end
+
+    if category == "forageharvesters" or category == "forageharvestercutters" then
+        -- EN: Calibrated so a 930–950 hp forage harvester (CLAAS Jaguar 990 / JD 9900) reaches
+        --     ~450 t/hr fresh corn silage at 100% rated capacity.
+        --     Formula: basePerfMass = coef × (400^0.25) × (hp^0.75)
+        --       930 hp → 0.166 × 4.472 × 168.5 = 125.1 kg/s = 450 t/hr  ✓ (CLAAS Jaguar 990)
+        --       650 hp → 0.166 × 4.472 × 128.9 =  95.7 kg/s = 344 t/hr  ✓ (mid-size, e.g. Jaguar 870)
+        --       450 hp → 0.166 × 4.472 × 97.0  =  72.0 kg/s = 259 t/hr  ✓ (small forage harvester)
+        -- UA: Калібровано: 930 к.с. Jaguar 990 = 450 т/год кукурудзяного силосу при 100% навантаженні.
+        coef = 0.166
+    elseif category == "beetvehicles" or category == "beetharvesting" then
         coef = 0.060  -- Beet harvesting
-    elseif category == "potatoVehicles" then
+    elseif category == "potatovehicles" then
         coef = 0.060  -- Potato harvesting
-    elseif category == "cottonVehicles" then
+    elseif category == "cottonvehicles" then
         coef = 0.015  -- Cotton
-    elseif category == "vegetableVehicles" then
+    elseif category == "vegetablevehicles" then
         coef = 0.060  -- Vegetable harvesting
     end
     
     if vehicle.spec_motorized and vehicle.spec_motorized.motor then
-        power = vehicle.spec_motorized.motor.hp or 0
+        local motor = vehicle.spec_motorized.motor
+        -- EN: FS25 VehicleMotor does NOT have a .hp property at runtime.
+        --     The #hp XML attribute is only used for shop-display via loadSpecValuePowerConfig()
+        --     and is never stored on the motor object itself.
+        --     The correct runtime API is motor.peakMotorPower, which is in kW (kilowatts).
+        --     Derivation: keyframes store (normalizedTorque × torqueScale_kNm) as value and
+        --     actual RPM as time. peakMotorPower = max(scaledTorque_kNm × RPM) × π/30
+        --     = kNm × rad/s = kW.  Convert to hp: kW ÷ 0.7457.
+        --
+        -- EN: IMPORTANT: peakMotorPower is the mechanical engine-curve peak computed from the
+        --     torque keyframes.  For forage harvesters (and some tractors) this often reports
+        --     significantly less than the advertised HP because the torque curve shape in the
+        --     vehicle XML does not scale to the full rated power.  We also read the XML #hp
+        --     shop-display attribute and take the maximum of both, so the calibration always
+        --     matches what the user sees in the store.
+        -- UA: peakMotorPower — механічний пік з кривої двигуна.  Для форажних часто нижчий за
+        --     паспортні дані.  Беремо максимум між peakMotorPower і XML #hp зі стору.
+        if motor.peakMotorPower and motor.peakMotorPower > 0 then
+            power = motor.peakMotorPower / 0.7457  -- EN: kW → hp / UA: кВт → к.с.
+        end
+    end
+
+    -- EN: Also read the XML #hp store-display attribute via ConfigurationUtil (schema-registered,
+    --     no validation errors) and take the maximum over peakMotorPower-derived hp.
+    --     Guards against forage harvester torque curves that underreport vs. advertised HP
+    --     (e.g. CLAAS Jaguar 990 advertised 913 hp, peakMotorPower curve gives ~400 hp).
+    -- UA: Читаємо XML #hp через ConfigurationUtil (зареєстровано в схемі) і беремо максимум.
+    if SpecializationUtil.hasSpecialization(Motorized, vehicle.specializations) then
+        local cfgKey = ConfigurationUtil.getXMLConfigurationKey(
+            vehicle.xmlFile,
+            vehicle.configurations and vehicle.configurations.motor,
+            "vehicle.motorized.motorConfigurations.motorConfiguration",
+            "vehicle.motorized",
+            "motor"
+        )
+        local xmlHp = ConfigurationUtil.getConfigurationValue(
+            vehicle.xmlFile, cfgKey, "", "#hp", nil,
+            "vehicle.motorized.motorConfigurations.motorConfiguration(0)",
+            "vehicle"
+        )
+        if xmlHp and tonumber(xmlHp) and tonumber(xmlHp) > (power or 0) then
+            power = tonumber(xmlHp)
+        end
     end
     
     -- SMART DETECTION: If category didn't match specific types
@@ -278,46 +336,36 @@ function LoadCalculator:getBasePerformanceFromPower(vehicle)
         end
     end
     
-    -- NEXAT FIX (Module search)
+    -- EN: NEXAT / articulated-module fix — walk the vehicle hierarchy to find the engine unit.
+    -- UA: Виправлення для NEXAT / модульних машин — шукаємо двигун у ієрархії транспорту.
     if (not power or power == 0) then
         local function findVehicleWithEngine(v)
             if not v then return nil end
-            if v.spec_motorized and v.spec_motorized.motor and v.spec_motorized.motor.hp and v.spec_motorized.motor.hp > 0 then
+            local m = v.spec_motorized and v.spec_motorized.motor
+            if m and m.peakMotorPower and m.peakMotorPower > 0 then
                 return v
             end
             if v.getAttacherVehicle then
                 return findVehicleWithEngine(v:getAttacherVehicle())
             end
             if v.rootVehicle and v.rootVehicle ~= v then
-                 if v.rootVehicle.spec_motorized and v.rootVehicle.spec_motorized.motor and v.rootVehicle.spec_motorized.motor.hp > 0 then
+                local rm = v.rootVehicle.spec_motorized and v.rootVehicle.spec_motorized.motor
+                if rm and rm.peakMotorPower and rm.peakMotorPower > 0 then
                     return v.rootVehicle
-                 end
+                end
             end
             return nil
         end
         local engineVeh = findVehicleWithEngine(vehicle)
         if engineVeh then
-            power = engineVeh.spec_motorized.motor.hp or 0
+            local m = engineVeh.spec_motorized.motor
+            if m.peakMotorPower and m.peakMotorPower > 0 then
+                power = m.peakMotorPower / 0.7457  -- EN: kW → hp / UA: кВт → к.с.
+            end
         end
     end
     
-    if power == 0 then
-        local key, motorId = ConfigurationUtil.getXMLConfigurationKey(
-            vehicle.xmlFile, 
-            vehicle.configurations.motor, 
-            "vehicle.motorized.motorConfigurations.motorConfiguration", 
-            "vehicle.motorized", 
-            "motor"
-        )
-        local fallbackConfigKey = "vehicle.motorized.motorConfigurations.motorConfiguration(0)"
-        local fallbackOldKey = "vehicle"
-        
-        if SpecializationUtil.hasSpecialization(Motorized, vehicle.specializations) then
-            power = ConfigurationUtil.getConfigurationValue(
-                vehicle.xmlFile, key, "", "#hp", nil, fallbackConfigKey, fallbackOldKey
-            )
-        end
-    end
+    -- EN: #hp already read unconditionally above via ConfigurationUtil — no second pass needed.
     
     if power and tonumber(power) > 0 then
         -- EN: Built-in throughput curve (exponent 0.75, reference 400hp) — used when no
@@ -340,10 +388,8 @@ function LoadCalculator:getBasePerformanceFromPower(vehicle)
         -- UA: Криві AEM тут не застосовуються, бо currentCrop завжди nil під час ініціалізації.
         --     Натомість крива конкретної культури динамічно оновлюється у calculateEngineLoad.
 
-        if rhm_Combine and rhm_Combine.debug then
-            print(string.format("RHM DEBUG: BasePerf Mass computed for %s (cat: %s, coef: %.3f): %d hp -> %.2f kg/s (%.1f t/h)",
-                vehicle:getFullName(), category or "unknown", coef, hp, basePerf, basePerf * 3.6))
-        end
+        Logging.info(string.format("[RHM] BasePerfMass: %s | cat=%s coef=%.3f | %d hp → %.1f kg/s = %.0f t/h",
+            vehicle:getFullName(), category or "?", coef, hp, basePerf, basePerf * 3.6))
         return basePerf
     end
     
@@ -384,8 +430,9 @@ function LoadCalculator:updateMoistureFactor(dt)
     end
 
     -- EN: dayTime is milliseconds since midnight. 24h = 86,400,000 ms.
+    --     Field is environment.dayTime (NOT .currentDayTime — that field does not exist).
     -- UA: dayTime — мілісекунди від опівночі. 24 год = 86 400 000 мс.
-    local dayTime = g_currentMission.environment.currentDayTime or 0
+    local dayTime = g_currentMission.environment.dayTime or 0
     local hour    = dayTime / 3600000  -- EN: Fractional hours 0.0–24.0 / UA: Дробові години 0.0–24.0
 
     local factor, label
@@ -532,18 +579,21 @@ end
 -- ============================================================================
 function LoadCalculator:startSession()
     self.session = {
-        startTime    = g_currentMission and g_currentMission.time or 0,
-        area         = 0,
-        mass         = 0,
-        loadSum      = 0,
-        loadCount    = 0,
-        lossSum      = 0,
-        lossCount    = 0,
-        hdrLossSum   = 0,
-        hdrLossCount = 0,
-        peakLoad     = 0,
-        plugCount    = 0,
-        active       = true,
+        startTime      = g_currentMission and g_currentMission.time or 0,
+        area           = 0,
+        mass           = 0,      -- EN: Harvested mass in tonnes / UA: Зібрана маса в тоннах
+        liters         = 0,      -- EN: Harvested volume in liters (for bushel conversion) / UA: Зібраний об'єм в літрах
+        loadSum        = 0,
+        loadCount      = 0,
+        thrLossSum     = 0,      -- EN: Cumulative threshing loss (rotor/concave + overload) / UA: Накопичені втрати обмолоту
+        thrLossCount   = 0,
+        cleanLossSum   = 0,      -- EN: Cumulative cleaning loss (fan/sieves) / UA: Накопичені втрати очистки
+        cleanLossCount = 0,
+        hdrLossSum     = 0,
+        hdrLossCount   = 0,
+        peakLoad       = 0,
+        plugCount      = 0,
+        active         = true,
     }
 end
 
@@ -551,25 +601,33 @@ function LoadCalculator:resetSession()
     self:startSession()
 end
 
-function LoadCalculator:updateSession(massKg, areaM2, cropLoss, headerLoss)
+-- EN: Updated signature: (massKg, areaM2, liters, thrLoss, cleanLoss, headerLoss)
+--     liters    — tick liters for bushel yield conversion.
+--     thrLoss   — threshing loss % this tick (overload + rotor/concave settings).
+--     cleanLoss — cleaning loss % this tick (fan/sieve settings).
+-- UA: Оновлений підпис: (massKg, areaM2, liters, thrLoss, cleanLoss, headerLoss)
+function LoadCalculator:updateSession(massKg, areaM2, liters, thrLoss, cleanLoss, headerLoss)
     if not self.session or not self.session.active then return end
     local load = self.engineLoad * 100
 
-    self.session.mass  = (self.session.mass  or 0) + massKg / 1000
-    self.session.area  = (self.session.area  or 0) + areaM2 / 10000
+    self.session.mass   = (self.session.mass   or 0) + massKg / 1000
+    self.session.area   = (self.session.area   or 0) + areaM2 / 10000
+    self.session.liters = (self.session.liters or 0) + (liters or 0)
 
     if load > 0 then
         self.session.loadSum   = (self.session.loadSum   or 0) + load
         self.session.loadCount = (self.session.loadCount or 0) + 1
-        if load > (self.session.peakLoad or 0) then
-            self.session.peakLoad = load
-        end
+        if load > (self.session.peakLoad or 0) then self.session.peakLoad = load end
     end
-    if cropLoss > 0 then
-        self.session.lossSum   = (self.session.lossSum   or 0) + cropLoss
-        self.session.lossCount = (self.session.lossCount or 0) + 1
+    if (thrLoss or 0) > 0 then
+        self.session.thrLossSum   = (self.session.thrLossSum   or 0) + thrLoss
+        self.session.thrLossCount = (self.session.thrLossCount or 0) + 1
     end
-    if headerLoss > 0 then
+    if (cleanLoss or 0) > 0 then
+        self.session.cleanLossSum   = (self.session.cleanLossSum   or 0) + cleanLoss
+        self.session.cleanLossCount = (self.session.cleanLossCount or 0) + 1
+    end
+    if (headerLoss or 0) > 0 then
         self.session.hdrLossSum   = (self.session.hdrLossSum   or 0) + headerLoss
         self.session.hdrLossCount = (self.session.hdrLossCount or 0) + 1
     end
@@ -579,26 +637,27 @@ end
 -- UA: Повертає форматовану таблицю підсумків для панелі звіту про збирання.
 function LoadCalculator:getSessionSummary(unitSystem)
     local s = self.session or {}
-    local avgLoad   = s.loadCount   > 0 and (s.loadSum   / s.loadCount)    or 0
-    local avgLoss   = s.lossCount   > 0 and (s.lossSum   / s.lossCount)    or 0
-    local avgHdrLoss= s.hdrLossCount> 0 and (s.hdrLossSum/ s.hdrLossCount) or 0
+    local avgLoad     = s.loadCount     > 0 and (s.loadSum     / s.loadCount)     or 0
+    local avgThrLoss  = s.thrLossCount  > 0 and (s.thrLossSum  / s.thrLossCount)  or 0
+    local avgCleanLoss= s.cleanLossCount> 0 and (s.cleanLossSum/ s.cleanLossCount) or 0
+    local avgHdrLoss  = s.hdrLossCount  > 0 and (s.hdrLossSum  / s.hdrLossCount)  or 0
+    local avgTotalLoss = avgThrLoss + avgCleanLoss
 
-    -- EN: Elapsed time in seconds (game time, not real time).
-    -- UA: Час сесії в секундах (ігровий час, не реальний).
+    -- EN: Elapsed game-time in minutes.
     local elapsed = 0
     if s.startTime and g_currentMission then
         elapsed = math.max(0, (g_currentMission.time - s.startTime) / 1000)
     end
     local elapsedMin = math.floor(elapsed / 60)
 
-    -- EN: Session efficiency grade (starts at 100, penalties applied).
-    -- UA: Оцінка ефективності сесії (починаємо з 100, застосовуємо штрафи).
+    -- EN: Efficiency score — starts at 100, deduct for losses, plugs, under-utilization.
     local score = 100
-    score = score - avgLoss    * 5.0   -- EN: -5 pts per 1% avg threshing loss
-    score = score - avgHdrLoss * 3.0   -- EN: -3 pts per 1% avg header loss
-    score = score - (s.plugCount or 0) * 10  -- EN: -10 pts per plug
+    score = score - avgThrLoss   * 5.0  -- EN: -5 pts per 1% avg threshing loss
+    score = score - avgCleanLoss * 4.0  -- EN: -4 pts per 1% avg cleaning loss
+    score = score - avgHdrLoss   * 3.0  -- EN: -3 pts per 1% avg header loss
+    score = score - (s.plugCount or 0) * 10
     if avgLoad > 0 and avgLoad < 70 then
-        score = score - math.max(0, (70 - avgLoad) / 5) * 3  -- EN: Under-utilization penalty
+        score = score - math.max(0, (70 - avgLoad) / 5) * 3
     end
     score = math.max(0, math.min(100, score))
 
@@ -609,33 +668,45 @@ function LoadCalculator:getSessionSummary(unitSystem)
     elseif score >= 60 then grade = "D"
     else                    grade = "F"
     end
-    -- EN: Add +/- modifier within each letter band
     local mod = score % 10
     if mod >= 7 then grade = grade .. "+"
     elseif mod < 3 and grade ~= "F" then grade = grade .. "-"
     end
 
-    -- EN: Convert area + mass to active unit system.
+    -- EN: Yield display — bushels use liters/35.2391; imperial = short tons; metric = tonnes.
+    -- UA: Відображення врожаю — бушелі через літри/35.2391; imperial = коротка тонна; метрично = т.
     local areaStr, massStr
-    if unitSystem == 2 or unitSystem == 3 then
+    if unitSystem == 3 then  -- EN: Bushels
         areaStr = string.format("%.1f ac", (s.area or 0) * 2.47105)
-        massStr = string.format("%.1f t",  (s.mass or 0) * 1.10231)
-    else
+        local bushels = (s.liters or 0) / 35.2391
+        massStr = string.format("%.0f bu", bushels)
+    elseif unitSystem == 2 then  -- EN: Imperial (short tons)
+        areaStr = string.format("%.1f ac", (s.area or 0) * 2.47105)
+        massStr = string.format("%.1f ton", (s.mass or 0) * 1.10231)
+    else  -- EN: Metric
         areaStr = string.format("%.1f ha", s.area or 0)
         massStr = string.format("%.1f t",  s.mass or 0)
     end
 
+    if RHM_Debug and RHM_Debug.isEnabled("LoadCalculator") then
+        print(string.format(
+            "RHM [SessionSummary] avgThr=%.2f avgClean=%.2f avgHdr=%.2f score=%.0f liters=%.0f mass=%.2ft",
+            avgThrLoss, avgCleanLoss, avgHdrLoss, score, s.liters or 0, s.mass or 0))
+    end
+
     return {
-        time        = string.format("%d min", elapsedMin),
-        area        = areaStr,
-        mass        = massStr,
-        avgLoad     = string.format("%.0f%%", avgLoad),
-        peakLoad    = string.format("%.0f%%", s.peakLoad or 0),
-        avgLoss     = string.format("%.1f%%", avgLoss),
-        avgHdrLoss  = string.format("%.1f%%", avgHdrLoss),
-        plugs       = tostring(s.plugCount or 0),
-        grade       = grade,
-        score       = math.floor(score),
+        time         = string.format("%d min", elapsedMin),
+        area         = areaStr,
+        mass         = massStr,
+        avgLoad      = string.format("%.0f%%",  avgLoad),
+        peakLoad     = string.format("%.0f%%",  s.peakLoad or 0),
+        avgThrLoss   = string.format("%.1f%%",  avgThrLoss),
+        avgCleanLoss = string.format("%.1f%%",  avgCleanLoss),
+        avgLoss      = string.format("%.1f%%",  avgTotalLoss),  -- EN: total, kept for backward compat
+        avgHdrLoss   = string.format("%.1f%%",  avgHdrLoss),
+        plugs        = tostring(s.plugCount or 0),
+        grade        = grade,
+        score        = math.floor(score),
     }
 end
 
@@ -674,16 +745,47 @@ function LoadCalculator:calculateEngineLoad(vehicle)
     -- EN: Dynamic basePerfMass update — recalculate when the active crop changes.
     --     At onPostLoad (init time) currentCrop is always nil, so the AEM per-crop curve
     --     could never be applied then. We apply it here the first time the crop is known.
+    --
+    --     Forage harvesters use a separate _forageData table keyed by fruit type name,
+    --     with tPerHrMin/tPerHrMax anchors (400/950 hp) in fresh t/hr — completely
+    --     independent of the grain bu/hr curves in _data.
     -- UA: Динамічне оновлення basePerfMass — перераховуємо при зміні активної культури.
-    --     При ініціалізації currentCrop завжди nil, тому тут застосовуємо криву культури.
+    --     Форажні комбайни використовують окрему таблицю _forageData з прив'язками у т/год.
     local currentCropName = self.combineMemory and self.combineMemory.currentCrop
-    if currentCropName and currentCropName ~= self.lastBasePerfCrop and self.cachedHP > 0 then
+    local isForageMachine = self.combineMemory and self.combineMemory.machineType == "forage"
+    if isForageMachine then
+        -- EN: Forage path — track fruit type changes and apply the per-crop forage throughput curve.
+        --     Uses tPerHrMin/tPerHrMax anchors (400/950 hp) from cropThroughput.xml.
+        --     Falls back to the corn silage curve if the current crop has no forage entry,
+        --     then to the fixed coef formula if corn silage is also absent.
+        -- UA: Форажний шлях — відстежуємо зміни типу плоду, застосовуємо форажну криву.
+        local ft = vehicle.spec_combine and vehicle.spec_combine.lastValidInputFruitType
+        if ft and ft ~= (self.lastForageFruitType or -1) and self.cachedHP and self.cachedHP > 0 then
+            self.lastForageFruitType = ft
+            local ftDesc = g_fruitTypeManager and g_fruitTypeManager:getFruitTypeByIndex(ft)
+            local ftName = ftDesc and ftDesc.name
+            local params = CropThroughputConfig and CropThroughputConfig.getForageCurveParams
+                           and (CropThroughputConfig.getForageCurveParams(ftName)
+                                or CropThroughputConfig.getForageCurveParams("maize"))
+            if params then
+                self.basePerfMass = params.coef * (self.cachedHP ^ params.exp)
+                Logging.info(string.format("[RHM] Forage curve: %s → basePerfMass=%.2f kg/s (%.0f US ton/h) @ %d hp",
+                    ftName or "maize(fallback)", self.basePerfMass, self.basePerfMass * 3.6 * 1.10231, self.cachedHP))
+            else
+                Logging.warning(string.format("[RHM] Forage curve: no params for '%s', basePerfMass unchanged=%.2f kg/s",
+                    tostring(ftName), self.basePerfMass))
+            end
+            if currentCropName then self.lastBasePerfCrop = currentCropName end
+        end
+    elseif currentCropName and currentCropName ~= self.lastBasePerfCrop and self.cachedHP > 0 then
+        -- EN: Grain combines — apply the per-crop AEM throughput curve.
+        -- UA: Зернові комбайни — застосовуємо криву AEM для конкретної культури.
         local params = CropThroughputConfig and CropThroughputConfig.getCurveParams
                        and CropThroughputConfig.getCurveParams(currentCropName)
         if params then
             self.basePerfMass = params.coef * (self.cachedHP ^ params.exp)
-            if rhm_Combine and rhm_Combine.debug then
-                print(string.format("RHM: [Throughput] Crop changed to %s — basePerfMass updated to %.2f kg/s (%.0f t/h) at %d hp",
+            if RHM_Debug and RHM_Debug.isEnabled("LoadCalculator") then
+                print(string.format("RHM: [Throughput] %s → basePerfMass %.2f kg/s (%.0f t/h) @ %d hp",
                     currentCropName, self.basePerfMass, self.basePerfMass * 3.6, self.cachedHP))
             end
         end
@@ -729,25 +831,26 @@ function LoadCalculator:calculateEngineLoad(vehicle)
             local implObj = implement.object
             if implObj then
                 local storeItem = g_storeManager:getItemByXMLFilename(implObj.configFileName)
-                local cat = storeItem and storeItem.categoryName or ""
-                
+                -- EN: Normalize category to lowercase for case-insensitive matching.
+                local cat = storeItem and storeItem.categoryName and storeItem.categoryName:lower():gsub("%s","") or ""
+
                 -- EN: Detect Forage Harvester Header / UA: Силосна жатка
-                if implObj.spec_forageHarvesterCutter ~= nil or implObj.spec_forageCutter ~= nil 
-                   or cat == "forageHarvesterCutters" then
+                if implObj.spec_forageHarvesterCutter ~= nil or implObj.spec_forageCutter ~= nil
+                   or cat == "forageharvestercutters" then
                     isForageCutter = true
                 end
 
                 -- EN: Detect WINDROW Pickup (not vegetable harvester!)
                 -- UA: Визначаємо підбірач валків (не овочевий комбайн!)
                 if implObj.spec_pickup ~= nil or cat == "pickups" or cat == "slasher" then
-                    
+
                     -- EN: Check if this is a vegetable/root crop direct harvester
                     -- UA: Перевіряємо чи це прямий збирач овочів/коренеплодів
                     local isVegetableHarvester = false
-                    
+
                     -- 1. Category check
-                    if cat == "vegetableVehicles" or cat == "onionHarvesters" 
-                       or cat == "rootCropHarvesters" then
+                    if cat == "vegetablevehicles" or cat == "onionharvesters"
+                       or cat == "rootcropharvesters" then
                         isVegetableHarvester = true
                     end
                     
@@ -799,25 +902,38 @@ function LoadCalculator:calculateEngineLoad(vehicle)
         end
     end
 
+    -- EN: FORAGE MACHINE: basePerfMass is already per-crop via CropThroughputConfig forage curves
+    --     (tPerHrMin / tPerHrMax anchors in cropThroughput.xml, updated dynamically above when
+    --     the fruit type changes).  No additional cropFactor multiplier is needed here.
+    -- UA: ФОРАЖНА МАШИНА: basePerfMass вже враховує культуру через форажні криві CropThroughputConfig.
+    --     Додатковий множник cropFactor не потрібен.
+    local appliedForageFactor = false
+    if isForageMachine then
+        cropFactor = 1.0
+        appliedForageFactor = true
+    end
+
     -- EN: APPLY MULTIPLIERS / UA: ЗАСТОСУВАННЯ МНОЖНИКІВ
     self.isPickup = isPickup
-    if isPickup then
-        -- EN: Root crops & Vegetables should NOT be easier when picked up (already high volume)
-        -- UA: Коренеплоди та овочі не повинні бути легшими при підбиранні
-        local isRootOrVeg = currentFruitTypeName:find("ONION") 
-                         or currentFruitTypeName:find("POTATO") 
-                         or currentFruitTypeName:find("CARROT")
-                         or currentFruitTypeName:find("PARSNIP")
-                         or currentFruitTypeName:find("BEETROOT")
-                         or currentFruitTypeName:find("SUGARBEET")
-                         or currentFruitTypeName:find("SPINACH")
-                         or currentFruitTypeName:find("GREENBEAN")
-                         
-        if not isRootOrVeg then
-            cropFactor = cropFactor * 0.75  -- EN: Standard windrows (Wheat, Barley, etc.)
+    if not appliedForageFactor then
+        if isPickup then
+            -- EN: Root crops & Vegetables should NOT be easier when picked up (already high volume)
+            -- UA: Коренеплоди та овочі не повинні бути легшими при підбиранні
+            local isRootOrVeg = currentFruitTypeName:find("ONION")
+                             or currentFruitTypeName:find("POTATO")
+                             or currentFruitTypeName:find("CARROT")
+                             or currentFruitTypeName:find("PARSNIP")
+                             or currentFruitTypeName:find("BEETROOT")
+                             or currentFruitTypeName:find("SUGARBEET")
+                             or currentFruitTypeName:find("SPINACH")
+                             or currentFruitTypeName:find("GREENBEAN")
+
+            if not isRootOrVeg then
+                cropFactor = cropFactor * 0.75  -- EN: Standard windrows (Wheat, Barley, etc.)
+            end
+        elseif isForageCutter then
+            cropFactor = cropFactor * 0.80  -- EN: Forage harvesters (silage/direct cut) / UA: Кормозбиральні комбайни
         end
-    elseif isForageCutter then
-        cropFactor = cropFactor * 0.80  -- EN: Forage harvesters (silage/direct cut) / UA: Кормозбиральні комбайни (силос/пряме косіння)
     end
 
     -- --- [RHM DEBUG: INFO LOG] ---
@@ -827,12 +943,28 @@ function LoadCalculator:calculateEngineLoad(vehicle)
         print(string.format("RHM DEBUG: [INPUT] %s (%s). Final Factor: %.3f", mode, currentFruitTypeName, cropFactor))
     end
     
+    -- EN: Grain moisture penalty — reads field-level grain moisture % from the external 'Moisture System' mod.
+    --     Above 14% moisture limit: each extra 1% adds 2% more effective load (crop is harder to thresh).
+    --     Forage and root-crop machines are exempt — they don't separate grain at harvest.
+    --     Stacks multiplicatively with the time-of-day plant moisture factor (self.moistureFactor).
+    -- UA: Штраф за вологість зерна — читає вологість з зовнішнього моду 'Moisture System'.
+    --     Понад 14% ліміту: кожен 1% понад норму додає 2% ефективного навантаження.
+    local grainMoistureFactor = 1.0
+    local machineTypeForMoisture = self.combineMemory and self.combineMemory.machineType or "grain"
+    if machineTypeForMoisture ~= "forage" and machineTypeForMoisture ~= "root" then
+        local rhmSpec = vehicle.spec_rhm_Combine
+        local gm = rhmSpec and rhmSpec.data and rhmSpec.data.grainMoisture or 0
+        if gm > 14 then
+            grainMoistureFactor = 1.0 + (gm - 14) * 0.02
+        end
+    end
+
     -- EN: Calculate RAW average mass intake per second / UA: Розраховуємо RAW середню масу за секунду (кг/с)
     -- EN: Uses accumulatedMass over the target distance/time / UA: Використовуємо accumulatedMass
-    -- EN: Apply time-of-day moisture factor — wet crops require more power to thresh and separate.
-    -- UA: Застосовуємо коефіцієнт вологості — вологі культури потребують більше потужності.
+    -- EN: Apply time-of-day plant moisture factor AND grain moisture factor (both raise effective load).
+    -- UA: Застосовуємо коефіцієнти вологості рослини (час доби) та вологості зерна (зовнішній мод).
     local safeTime = math.max(100, self.currentTime) -- Protect against division by zero
-    local rawAvgMass = (self.loadAccumulatedMass or 0) * (1000 / safeTime) * cropFactor * (self.moistureFactor or 1.0)
+    local rawAvgMass = (self.loadAccumulatedMass or 0) * (1000 / safeTime) * cropFactor * (self.moistureFactor or 1.0) * grainMoistureFactor
     
     -- ADAPTIVE SMOOTHING
     local loadRatio = self.currentAvgMass / math.max(0.01, self.basePerfMass)
@@ -855,7 +987,7 @@ function LoadCalculator:calculateEngineLoad(vehicle)
     end
     
     local maxAvgMass = (1 + 0.01 * powerBoost) * self.basePerfMass * (self.settingsEfficiency or 1.0)
-    
+
     if maxAvgMass > 0 then
         self.engineLoad = self.currentAvgMass / maxAvgMass
     else
@@ -894,17 +1026,23 @@ function LoadCalculator:calculateSpeedLimit(vehicle)
     -- EN: Calculate error between target and current load
     -- UA: Розраховуємо різницю між цільовим і реальним навантаженням
     local difference = targetLoad - loadRatio
-    
+
+    -- EN: Deadzone of +/- 2% to prevent micro-oscillations and jitter around the target
+    -- UA: Мертва зона +/- 2% щоб запобігти мікроколиванням навколо цілі
+    if math.abs(difference) < 0.02 then
+        difference = 0
+    end
+
     -- EN: Proportional adjustment: hard brake on overload, smooth acceleration on underload
     -- UA: Пропорційне регулювання: швидке гальмування при перевантаженні, плавний розгін
-    local step = difference * 2.0
+    local step = difference * 1.5
     if difference < 0 then
-        step = difference * 5.0 -- EN: Panic brake / UA: Екстренне скидання швидкості при забиванні
+        step = difference * 4.0 -- EN: Panic brake / UA: Екстренне скидання швидкості при забиванні
     end
-    
+
     -- EN: Limit speed jump to avoid jittering
     -- UA: Обмежуємо максимальний стрибок швидкості за один тік, щоб уникнути ривків
-    step = math.max(-3.0, math.min(1.0, step))
+    step = math.max(-2.5, math.min(0.8, step))
     
     self.speedLimit = self.speedLimit + step
 
@@ -967,7 +1105,21 @@ function LoadCalculator:reset()
     self.instantYield = 0
 end
 
----EN: Calculates settings-related quality losses / UA: Розраховує втрати врожаю
+---EN: Calculates load-based crop loss from overloading above rated capacity.
+-- EN: Perfect settings at ≤100% engine load produce 0% loss here — a well-tuned combine
+--     can run at full rated capacity cleanly. Settings-deviation penalties are applied
+--     separately in calculateTotalCropLoss() and scale with load, so poor settings cause
+--     losses even at 80% load while perfect settings give wiggle room up to 100%.
+--
+--   Overload curve (load > 100%):
+--     100%: 0%       (rated capacity — no overload loss with perfect settings)
+--     105%: ~0.2%    (Great — minor overload, machine still coping)
+--     108%: ~0.5%    (Great/Good boundary)
+--     110%: ~0.8%    (Good — noticeably over capacity)
+--     115%: ~1.8%    (Worrying — significant overload)
+--     120%: ~3.2% + linear spike → ~6%   (Bad)
+--     130%: ~7.2% + linear spike → ~16%  (catastrophic — plug imminent)
+-- UA: Втрати від перевантаження вище номінальної потужності. Ідеальні налаштування = 0% при ≤100%.
 function LoadCalculator:calculateCropLoss()
     if not g_realisticHarvestManager or not g_realisticHarvestManager.settings then return 0 end
     if not g_realisticHarvestManager.settings.enableCropLoss then return 0 end
@@ -975,65 +1127,115 @@ function LoadCalculator:calculateCropLoss()
     -- EN: Forage harvesters (silage cutters) have no true loss mechanic — the only way
     --     crop is lost is if the spout discharge misses the trailer, which is an operator
     --     issue unrelated to machine settings. Exclude loss for forage machines entirely.
-    -- UA: Кормозбиральні комбайни (силосоріза) не мають реального механізму втрат —
-    --     втрати можливі тільки якщо розвантаження міне причіп (помилка оператора).
+    -- UA: Кормозбиральні комбайни (силосоріза) не мають реального механізму втрат.
     if self.combineMemory and self.combineMemory.machineType == "forage" then
         self.cropLoss = 0
         return 0
     end
-    
+
     local lossMultiplier = g_realisticHarvestManager.settings:getLossMultiplier()
-    
-    -- EN: Losses start smoothly from 80% engine load
-    -- UA: Втрати починаються плавно з 80% завантаження
-    if self.engineLoad > 0.80 then
-        local overload = self.engineLoad - 0.80
-        -- UA: Прогресивна крива (експонента): 
-        -- При 80% (overload=0) -> 0% втрат
-        -- При 90% (overload=0.1) -> 0.5% (мізерні втрати)
-        -- При 100% (overload=0.2) -> 2.0% (допустимі втрати)
-        -- При 110% (overload=0.3) -> 4.5% (пік продуктивності)
-        -- При 130% (overload=0.5) -> 12.5% (величезні втрати)
-        local rawLoss = (overload * overload) * 50
-        
-        -- UA: Різке зростання, якщо завантаження перевищило 110% (забита молотарка)
-        if self.engineLoad > 1.10 then
-            rawLoss = rawLoss + ((self.engineLoad - 1.10) * 100)
+    local load = self.engineLoad
+
+    -- EN: No overload loss at or below rated capacity — perfect settings give clean headroom.
+    local overloadLoss = 0
+    if load > 1.00 then
+        local overload = load - 1.00
+        -- EN: Quadratic — grows slowly just above 100%, accelerates sharply past 115%.
+        overloadLoss = (overload * overload) * 80
+        -- EN: Linear spike above 115% — combine severely overloaded, plug risk is high.
+        if load > 1.15 then
+            overloadLoss = overloadLoss + ((load - 1.15) * 60)
         end
-        
-        self.cropLoss = math.min(rawLoss * lossMultiplier, 50) 
-    else
-        self.cropLoss = 0
     end
+
+    self.cropLoss = math.min(overloadLoss * lossMultiplier, 50)
     return self.cropLoss
 end
 
----EN: Calculates losses from inaccurate player threshing settings / UA: Розраховує втрати від неправильних налаштувань гравцем
+-- EN: Evaluates settings penalty and stores RAW (unscaled) values.
+--     Load-scaling is applied in calculateTotalCropLoss() so repeated calls
+--     to that function don't double-scale the penalty.
+--     rawThrSettingsLoss = max penalty from rotor/concave misadjustment at rated capacity.
+--     rawCleanSettingsLoss = max penalty from fan/sieve misadjustment at rated capacity.
+-- UA: Оцінює штраф налаштувань і зберігає СИРІ (немасштабовані) значення.
 function LoadCalculator:updateSettingsImpact()
-    self.settingsEfficiency = 1.0
-    self.settingsLoss = 0
+    self.settingsEfficiency   = 1.0
+    self.rawThrSettingsLoss   = 0
+    self.rawCleanSettingsLoss = 0
     if not self.combineMemory or not self.currentCrop then return end
-    local effPenalty, lossPenalty, _ = self.combineMemory:checkSettingsForCrop(self.currentCrop)
-    
+
+    local effPenalty, thrLoss, cleanLoss, _ =
+        self.combineMemory:checkSettingsForCrop(self.currentCrop)
+
+    -- EN: Efficiency multiplier (affects throughput speed, not crop loss directly).
     if effPenalty < 0 then
         self.settingsEfficiency = 1.0 + (math.abs(effPenalty) * 5.0 / 100.0)
     else
         self.settingsEfficiency = 1.0 - (effPenalty / 100.0)
     end
-    
-    if lossPenalty < 0 then
-        self.settingsLoss = 0 
-    else
-        self.settingsLoss = lossPenalty
+
+    self.rawThrSettingsLoss   = math.max(0, thrLoss)
+    self.rawCleanSettingsLoss = math.max(0, cleanLoss)
+
+    if RHM_Debug and RHM_Debug.isEnabled("LoadCalculator") then
+        print(string.format("RHM [LC:updateSettingsImpact] eff=%.2f rawThr=%.2f rawClean=%.2f",
+            self.settingsEfficiency, self.rawThrSettingsLoss, self.rawCleanSettingsLoss))
     end
 end
 
+-- EN: Computes final per-channel losses and stores them for HUD and session tracking.
+--     thrLoss   = floor/overload loss + load-scaled rotor/concave settings penalty.
+--     cleanLoss = load-scaled fan/sieve settings penalty.
+--     cropLoss  = total (backward-compat field used by scoring and stream sync).
+--
+--     Settings penalties are scaled by throughput: at low load (< 40%) wrong settings barely
+--     matter because grain moves slowly through the machine. At rated capacity (100%) the
+--     full penalty applies. Above rated capacity penalties amplify (cap 1.5×).
+--
+--     Raw penalties (rawThrSettingsLoss / rawCleanSettingsLoss) are preserved across calls
+--     so repeated calls in the same tick don't compound the scaling.
+-- UA: Обчислює фінальні втрати по каналах та зберігає для HUD і відстеження сесії.
 function LoadCalculator:calculateTotalCropLoss()
-    local baseLoss = self:calculateCropLoss()
-    local settingsAddedLoss = self.settingsLoss or 0
-    local totalLoss = baseLoss + settingsAddedLoss
-    totalLoss = math.min(totalLoss, 50)
-    self.cropLoss = totalLoss
+    local baseLoss = self:calculateCropLoss()  -- EN: Floor + overload loss (already multiplied)
+
+    -- EN: Guard — if crop loss is globally disabled, zero everything and bail.
+    if not g_realisticHarvestManager or not g_realisticHarvestManager.settings
+            or not g_realisticHarvestManager.settings.enableCropLoss then
+        self.thrLoss  = 0
+        self.cleanLoss = 0
+        self.cropLoss  = 0
+        return 0
+    end
+
+    local lossMultiplier = g_realisticHarvestManager.settings:getLossMultiplier()
+
+    -- EN: Load-scaling factor for settings penalties.
+    --     Physics rationale: at low throughput, grain has time to be separated even with imperfect
+    --     settings. As throughput (load) increases, the grain layer thickens and moves faster —
+    --     misadjusted rotor/sieves cannot compensate, so losses grow with load.
+    --       0% scale at 40% load  (barely any grain flowing)
+    --       50% scale at 70% load  (losses becoming noticeable with poor settings)
+    --       100% scale at 100% load (full settings penalty — rated capacity)
+    --       up to 150% scale above rated (overload amplifies settings sensitivity), capped
+    local loadScale = math.min(math.max((self.engineLoad - 0.40) / 0.60, 0.0), 1.5)
+
+    local rawThr   = self.rawThrSettingsLoss   or 0
+    local rawClean = self.rawCleanSettingsLoss or 0
+
+    local thrLoss   = math.min(baseLoss + rawThr   * loadScale * lossMultiplier, 50)
+    local cleanLoss = math.min(           rawClean * loadScale * lossMultiplier, 50)
+    local totalLoss = math.min(thrLoss + cleanLoss, 50)
+
+    self.thrLoss   = thrLoss
+    self.cleanLoss = cleanLoss   -- EN: Scaled final value; raw preserved in rawCleanSettingsLoss.
+    self.cropLoss  = totalLoss
+
+    if RHM_Debug and RHM_Debug.isEnabled("LoadCalculator") then
+        print(string.format(
+            "RHM [LC:calcLoss] base=%.2f scale=%.2f rawThr=%.2f rawClean=%.2f → thr=%.2f clean=%.2f total=%.2f",
+            baseLoss, loadScale, rawThr, rawClean, thrLoss, cleanLoss, totalLoss))
+    end
+
     return totalLoss
 end
 
@@ -1090,38 +1292,56 @@ function LoadCalculator:updateProductivity(mass, liters, dt)
 end
 
 ---EN: Processes complete physical output block calculations / UA: Виконує розрахунки врожайності
+-- EN: Yield is a SHORT rolling window (~2-3 seconds of recent ticks, not a field average).
+--     This gives a real-time snapshot — like a combine monitor that shows what the machine
+--     is seeing right now. The operator accepts the natural ±variance from short samples,
+--     just as on a real cab display.
+--
+--     Window: YIELD_WINDOW_SAMPLES ticks (onUpdateTick fires ~3×/sec in FS25 → ~2.5 sec).
+--     Formula: rawYield = (sumMass_kg / sumArea_m²) × 10  →  t/ha
+--     Noise: ±5% random applied at HUD display time (in DraggableHUD) — not stored here.
+--
+--     Startup guard: require sumArea > YIELD_MIN_AREA_M2 before publishing any reading.
+--     This prevents a huge spike on the very first tick when accumulated mass is non-zero
+--     but the distance-based area estimate has barely started (area ≈ 0 → ratio → ∞).
+-- UA: Короткий ковзний вікно (~2-3 сек). rawYield = (sumMass/sumArea)*10 → т/га.
+local YIELD_WINDOW_SAMPLES = 8    -- EN: ~2.5 sec at 3 Hz / UA: ~2.5 с при 3 Гц
+local YIELD_MIN_AREA_M2    = 8    -- EN: ~3m width × 2-3m travel before first reading
+
 function LoadCalculator:updateProductivityAndYield(mass, liters, area, dt)
     self:updateProductivity(mass, liters, dt)
     if area <= 0.0001 and mass <= 0.001 then
         self.currentYield = self.currentYield or 0
         return
     end
-    
-    self.yieldBuffer = self.yieldBuffer or {}
-    self.yieldStartIndex = self.yieldStartIndex or 1
-    self.yieldEndIndex = self.yieldEndIndex or 0
-    
+
+    self.yieldBuffer      = self.yieldBuffer      or {}
+    self.yieldStartIndex  = self.yieldStartIndex  or 1
+    self.yieldEndIndex    = self.yieldEndIndex    or 0
+
     self.yieldEndIndex = self.yieldEndIndex + 1
     self.yieldBuffer[self.yieldEndIndex] = {m = mass, a = area}
-    
-    if (self.yieldEndIndex - self.yieldStartIndex + 1) > 600 then 
+
+    -- EN: Trim to short window — discard samples older than YIELD_WINDOW_SAMPLES ticks.
+    -- UA: Обрізаємо до короткого вікна.
+    while (self.yieldEndIndex - self.yieldStartIndex + 1) > YIELD_WINDOW_SAMPLES do
         self.yieldBuffer[self.yieldStartIndex] = nil
         self.yieldStartIndex = self.yieldStartIndex + 1
     end
-    
+
     local sumMass = 0
     local sumArea = 0
-    for i = self.yieldStartIndex, self.yieldEndIndex do 
+    for i = self.yieldStartIndex, self.yieldEndIndex do
         local v = self.yieldBuffer[i]
         sumMass = sumMass + v.m
-        sumArea = sumArea + v.a 
+        sumArea = sumArea + v.a
     end
-    
-    if sumArea > 0.1 then
-        local rawYield = (sumMass / sumArea) * 10
-        local alpha = 0.03
-        if not self.currentYield or self.currentYield == 0 then self.currentYield = rawYield end
-        self.currentYield = self.currentYield * (1 - alpha) + rawYield * alpha
+
+    -- EN: Require a meaningful area sample before publishing — guards against the
+    --     first-tick spike where mass > 0 but distance-based area is near zero.
+    -- UA: Вимагаємо достатньої площі перш ніж публікувати — захист від першого тіку.
+    if sumArea >= YIELD_MIN_AREA_M2 then
+        self.currentYield = (sumMass / sumArea) * 10
     end
 end
 

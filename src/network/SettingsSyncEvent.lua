@@ -20,10 +20,12 @@ function SettingsSyncEvent.new(settings)
     local self = SettingsSyncEvent.emptyNew()
 
     -- EN: Copy the server-side settings that need to be synced (split difficulty fields used).
-    -- UA: Копіюємо серверні налаштування, які потрібно синхронізувати (використовуються роздільні поля складності).
+    --     NOTE: enableSpeedLimit was removed — speed automation is now gated by upgrade level 3
+    --     (purchased in the shop), not a global toggle. Removed from stream to avoid nil writes.
+    -- UA: Копіюємо серверні налаштування для синхронізації (використовуються роздільні поля складності).
+    --     УВАГА: enableSpeedLimit видалено — автоматизація швидкості тепер контролюється рівнем апгрейду 3.
     self.difficultyMotor = settings.difficultyMotor or 2
     self.difficultyLoss = settings.difficultyLoss or 2
-    self.enableSpeedLimit = settings.enableSpeedLimit
     self.enableCropLoss = settings.enableCropLoss
     self.enableIndependentLaunch = settings.enableIndependentLaunch
 
@@ -35,7 +37,6 @@ end
 function SettingsSyncEvent:writeStream(streamId, connection)
     streamWriteUInt8(streamId, self.difficultyMotor)
     streamWriteUInt8(streamId, self.difficultyLoss)
-    streamWriteBool(streamId, self.enableSpeedLimit)
     streamWriteBool(streamId, self.enableCropLoss)
     streamWriteBool(streamId, self.enableIndependentLaunch)
 end
@@ -45,7 +46,6 @@ end
 function SettingsSyncEvent:readStream(streamId, connection)
     self.difficultyMotor = streamReadUInt8(streamId)
     self.difficultyLoss = streamReadUInt8(streamId)
-    self.enableSpeedLimit = streamReadBool(streamId)
     self.enableCropLoss = streamReadBool(streamId)
     self.enableIndependentLaunch = streamReadBool(streamId)
 
@@ -69,15 +69,14 @@ function SettingsSyncEvent:run(connection)
         local settings = g_realisticHarvestManager.settings
         if settings then
             if RHM_Debug and RHM_Debug.isEnabled("Network") then
-                print(string.format("RHM: [Sync] Server APPLYING settings - Motor: %d, Loss: %d, Speed: %s, CropLoss: %s, IndLaunch: %s",
-                    self.difficultyMotor, self.difficultyLoss, tostring(self.enableSpeedLimit), tostring(self.enableCropLoss), tostring(self.enableIndependentLaunch)))
+                print(string.format("RHM: [Sync] Server APPLYING settings - Motor: %d, Loss: %d, CropLoss: %s, IndLaunch: %s",
+                    self.difficultyMotor, self.difficultyLoss, tostring(self.enableCropLoss), tostring(self.enableIndependentLaunch)))
             end
 
             -- EN: Apply the received split difficulty fields and feature flags.
             -- UA: Застосовуємо отримані розділені поля складності та прапорці функцій.
             settings.difficultyMotor = self.difficultyMotor
             settings.difficultyLoss = self.difficultyLoss
-            settings.enableSpeedLimit = self.enableSpeedLimit
             settings.enableCropLoss = self.enableCropLoss
             settings.enableIndependentLaunch = self.enableIndependentLaunch
 
@@ -105,13 +104,12 @@ function SettingsSyncEvent:run(connection)
             -- UA: Застосовуємо роздільні поля складності, отримані від сервера.
             settings.difficultyMotor = self.difficultyMotor
             settings.difficultyLoss = self.difficultyLoss
-            settings.enableSpeedLimit = self.enableSpeedLimit
             settings.enableCropLoss = self.enableCropLoss
             settings.enableIndependentLaunch = self.enableIndependentLaunch
-            
+
             if RHM_Debug and RHM_Debug.isEnabled("Network") then
-                print(string.format("RHM: [Sync] Client received update - Motor: %d, Loss: %d, Speed: %s, CropLoss: %s, IndLaunch: %s",
-                    self.difficultyMotor, self.difficultyLoss, tostring(self.enableSpeedLimit), tostring(self.enableCropLoss), tostring(self.enableIndependentLaunch)))
+                print(string.format("RHM: [Sync] Client received update - Motor: %d, Loss: %d, CropLoss: %s, IndLaunch: %s",
+                    self.difficultyMotor, self.difficultyLoss, tostring(self.enableCropLoss), tostring(self.enableIndependentLaunch)))
            end
         end
     end

@@ -28,26 +28,38 @@ function RealisticHarvestManager.new(mission, modDirectory, modName)
     self.savedCameraRotatableInfo = {} -- EN: Stores camera rotatability before cursor mode / UA: Зберігає стан камери до режиму курсора
 
     -- EN: Inject settings into the FS25 in-game settings menu (client only).
-    --     Hooks onFrameOpen and updateButtons to ensure our controls appear in the right place.
+    --     We patch the CLASS method InGameMenuSettingsFrame.onFrameOpen using prependedFunction
+    --     so our elements are added to the layout BEFORE the game computes positions.
+    --     Using appendedFunction on an instance runs too late (after draw) and conflicts with
+    --     DLC mods (Precision Farming, etc.) that also hook onFrameOpen.
     -- UA: Впроваджуємо налаштування в меню налаштувань FS25 (тільки клієнт).
-    --     Підключаємо onFrameOpen і updateButtons щоб наші елементи з'являлись у правильному місці.
+    --     Патчимо метод КЛАСУ InGameMenuSettingsFrame.onFrameOpen через prependedFunction,
+    --     щоб елементи додавались ДО того як гра рахує позиції.
     if mission:getIsClient() and g_gui then
         self.settingsUI = SettingsUI.new(self.settings)
 
-        local settingsPage = g_gui.screenControllers[InGameMenu].pageSettings
-        if settingsPage then
-            settingsPage.onFrameOpen = Utils.appendedFunction(settingsPage.onFrameOpen, function()
-                self.settingsUI:inject()
-                self.settingsUI:refreshUI()
-            end)
+        local settingsUI_ref = self.settingsUI
+        InGameMenuSettingsFrame.onFrameOpen = Utils.prependedFunction(
+            InGameMenuSettingsFrame.onFrameOpen,
+            function(settingsPage)
+                pcall(function()
+                    if settingsUI_ref then
+                        settingsUI_ref:inject()
+                        settingsUI_ref:refreshUI()
+                    end
+                end)
+            end
+        )
 
+        -- EN: Hook updateButtons on the instance to add the Reset footer button.
+        -- UA: Підключаємо updateButtons на екземпляр для додавання кнопки Reset у футер.
+        local settingsPage = g_gui.screenControllers[InGameMenu] and g_gui.screenControllers[InGameMenu].pageSettings
+        if settingsPage then
             settingsPage.updateButtons = Utils.appendedFunction(settingsPage.updateButtons, function(frame)
-                if self.settingsUI then
-                    self.settingsUI:ensureResetButton(frame)
+                if settingsUI_ref then
+                    settingsUI_ref:ensureResetButton(frame)
                 end
             end)
-        else
-            Logging.error("RHM: InGameMenuSettingsFrame (pageSettings) not found!")
         end
     end
 
@@ -97,6 +109,11 @@ end
 function RealisticHarvestManager:onMissionLoaded()
     if self.hud then
         self.hud:load()
+    end
+    -- EN: Probe for the external 'Moisture System' mod now that the mission is fully loaded.
+    -- UA: Шукаємо зовнішній мод 'Moisture System' після повного завантаження місії.
+    if MoistureAdapter and MoistureAdapter.initialize then
+        MoistureAdapter.initialize()
     end
 end
 

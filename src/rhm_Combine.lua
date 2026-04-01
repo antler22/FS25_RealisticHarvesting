@@ -354,7 +354,9 @@ function rhm_Combine:onLoad(savegame)
     spec.data = {
         speed = 0,
         load = 0,
-        cropLoss = 0,
+        cropLoss = 0,          -- EN: Total crop loss % (thrLoss + cleanLoss) / UA: Загальні втрати врожаю (%)
+        thrLoss  = 0,          -- EN: Threshing loss % (overload + rotor/concave) / UA: Втрати обмолоту (%)
+        cleanLoss = 0,         -- EN: Cleaning loss % (fan/sieves) / UA: Втрати очистки (%)
         headerLoss = 0,        -- EN: Speed-related header loss (%) / UA: Втрати від швидкості на жатці (%)
         tonPerHour = 0,
         litersPerHour = 0,
@@ -363,6 +365,7 @@ function rhm_Combine:onLoad(savegame)
         overloadLevel = 0,     -- EN: 0=normal, 1=HIGH (120%+), 2=CRITICAL (150%+) — synced for warning display / UA: 0=норма, 1=ВИСОКЕ (120%+), 2=КРИТИЧНЕ (150%+)
         isPlugged = false,     -- EN: True when rotor plug is active / UA: True коли активне засмічення ротора
         moistureLabel = "",    -- EN: Short label for current moisture condition / UA: Коротка мітка поточного стану вологості
+        grainMoisture = 0,     -- EN: Grain moisture % from external 'Moisture System' mod (0 = mod absent or not harvesting) / UA: Вологість зерна з зовнішнього моду (0 = мод відсутній або не косимо)
         plugTimerPct = 0,      -- EN: 0-100% progress toward plug (for HUD warning ramp-up) / UA: 0-100% прогрес до засмічення
     }
 
@@ -370,9 +373,13 @@ function rhm_Combine:onLoad(savegame)
     -- UA: Починаємо відстеження сесії відразу при завантаженні.
     spec.loadCalculator:startSession()
     
-    -- Лічильник для збереження площі з addCutterArea
+    -- EN: Area accumulators — lastArea kept for legacy; totalCumulativeArea/prevCumulativeArea
+    --     power the timing-safe delta calculation in onUpdateTick.
+    -- UA: Акумулятори площі — lastArea збережено для сумісності.
     spec.lastArea = 0
-    spec.lastLiters = 0  -- Літри зібраного врожаю
+    spec.lastLiters = 0
+    spec.totalCumulativeArea  = 0
+    spec.prevCumulativeArea   = 0
     
     -- Відстеження поточної жатки для визначення зміни
     spec.currentCutter = nil
@@ -458,11 +465,43 @@ function rhm_Combine:addCutterArea(superFunc, ...)
     end
     
     local areaForYield = area * sqmMultiplier
-    
-    -- EN: Accumulate area for LoadCalculator and yield monitor separately.
-    -- UA: Накопичуємо площу окремо для LoadCalculator і монітора врожайності.
-    spec.lastArea = (spec.lastArea or 0) + (areaForYield * multiplier)
-    spec.lastRawArea = (spec.lastRawArea or 0) + areaForYield
+
+    -- EN: Swath/pickup width correction — if the user has defined a swath width override
+    --     (for windrow pickup work), scale area so yield reflects the original cutting width
+    --     rather than the narrow pickup header width.
+    --     correction = swathWidth / headerWorkWidth. Only applied when swathWidth is set.
+    if spec.combineMemory and spec.combineMemory.swathWidth and spec.combineMemory.swathWidth > 0 then
+        -- EN: Walk attached cutters to find the working header width.
+        --     spec_combine.attachedCutters is the authoritative FS25 source; spec.combine is nil.
+        -- UA: Обходимо підключені жатки щоб знайти робочу ширину заголовника.
+        local headerW = 0
+        local sc = self.spec_combine
+        if sc and sc.attachedCutters then
+            for c, _ in pairs(sc.attachedCutters) do
+                local wa = c.spec_workArea
+                if wa and wa.workAreas and wa.workAreas[1] then
+                    headerW = wa.workAreas[1].workWidth or 0
+                end
+                if headerW <= 0 and type(c.getWorkAreaWidth) == "function" then
+                    headerW = c:getWorkAreaWidth(1) or 0
+                end
+                if headerW > 0 then break end
+            end
+        end
+        if headerW > 0.5 then
+            areaForYield = areaForYield * (spec.combineMemory.swathWidth / headerW)
+        end
+    end
+
+    -- EN: Accumulate area monotonically — never reset between ticks.
+    --     onUpdateTick computes the per-tick delta (totalArea - prevArea), which eliminates
+    --     the timing dependency between the cutter's onUpdateTick and the combine's onUpdateTick.
+    --     The old lastRawArea/lastArea reset-per-tick pattern broke forage harvesters because
+    --     FS25 updates the combine (parent) before the attached header, so addCutterArea fired
+    --     AFTER onUpdateTick had already read and reset the accumulator.
+    -- UA: Накопичуємо площу монотонно — ніколи не скидаємо між тіками.
+    spec.totalCumulativeArea = (spec.totalCumulativeArea or 0) + areaForYield
+    spec.lastArea = (spec.lastArea or 0) + (areaForYield * multiplier)  -- EN: kept for legacy / UA: збережено для сумісності
     spec.lastMultiplier = multiplier
     
     -- EN: Save fallback liters from the return value for forage harvesters without hoppers.
@@ -645,26 +684,20 @@ function rhm_Combine:getSpeedLimit(superFunc, onlyIfWorking)
         return limit, doCheckSpeedLimit
     end
     
-    -- EN: Check if speed limiting is enabled in settings.
-    -- UA: Перевіряємо чи увімкнено обмеження швидкості в налаштуваннях.
-    if g_realisticHarvestManager and g_realisticHarvestManager.settings then
-        if not g_realisticHarvestManager.settings.enableSpeedLimit then
-            spec.isSpeedLimitActive = false
-            return limit, doCheckSpeedLimit
-        end
-
-        -- EN: In Arcade difficulty mode, don't limit speed (like vanilla game).
-        -- UA: В режимі складності Arcade не обмежуємо швидкість (як у ванільній грі).
-        if g_realisticHarvestManager.settings.difficultyMotor == 1 then -- DIFFICULTY_ARCADE
-            spec.isSpeedLimitActive = false
-            return limit, doCheckSpeedLimit
-        end
+    -- EN: Speed Automation requires Level 3 (Speed Automation upgrade).
+    --     Below level 3 the combine has no auto speed control — player manages speed manually.
+    --     The old enableSpeedLimit toggle has been removed; upgrade level is the sole gate.
+    -- UA: Автоматика швидкості вимагає рівня 3 (Speed Automation).
+    --     Нижче рівня 3 комбайн не має автоматичного контролю швидкості.
+    if spec.combineMemory and (spec.combineMemory.upgradeLevel or 0) < 3 then
+        spec.isSpeedLimitActive = false
+        return limit, doCheckSpeedLimit
     end
 
-    -- EN: Speed Control upgrade (Tier 3) required for automatic speed limiting.
-    --     Without it, players must manage speed manually — no automation.
-    -- UA: Для автоматичного обмеження швидкості потрібен апгрейд Speed Control (Рівень 3).
-    if spec.combineMemory and (spec.combineMemory.upgradeLevel or 0) < 3 then
+    -- EN: In Arcade difficulty mode, don't limit speed (like vanilla game).
+    -- UA: В режимі складності Arcade не обмежуємо швидкість (як у ванільній грі).
+    if g_realisticHarvestManager and g_realisticHarvestManager.settings
+            and g_realisticHarvestManager.settings.difficultyMotor == 1 then
         spec.isSpeedLimitActive = false
         return limit, doCheckSpeedLimit
     end
@@ -1022,6 +1055,7 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
             spec.data.litersPerHour = 0
             spec.data.yield = 0
             spec.data.recommendedSpeed = 0
+            spec.data.grainMoisture = 0
         end
         spec.isSpeedLimitActive = false
 
@@ -1063,9 +1097,62 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
         end
     end
     
-    -- EN: Use lastRawArea (actual geometric area) for yield calculation.
-    -- UA: Використовуємо lastRawArea (реальну геометричну площу) для розрахунку врожайності.
-    local areaForYield = spec.lastRawArea or spec.lastArea or 0 
+    -- EN: Per-tick area — delta of the monotonic cumulative counter since last tick.
+    --     This is timing-safe: addCutterArea fires on the header vehicle (a child of the combine),
+    --     which FS25 updates AFTER the combine. Using a delta means we always read area that
+    --     was cut between the last two onUpdateTick calls, regardless of order.
+    -- UA: Площа за тік — різниця монотонного лічильника з минулого тіку.
+    local prevArea     = spec.prevCumulativeArea or 0
+    local areaForYield = (spec.totalCumulativeArea or 0) - prevArea
+    spec.prevCumulativeArea = spec.totalCumulativeArea or 0
+
+    -- EN: Area fallback — forage cutters and windrow pickups call addCutterArea with area=0
+    --     (forage: no fruit-pixel tracking; pickup: collects windrow objects not pixels).
+    --     Reconstruct area from distance × cutting width so yield (t/ha) stays non-zero.
+    --     Priority: 1. swathWidth (windrow pickup override), 2. cached width, 3. attached cutter probes.
+    --     Width is cached after first successful detection to avoid per-tick cutter iteration.
+    -- UA: Запасне рішення для форажних і підбирачів — area=0, тому обчислюємо з відстані × ширина.
+    if areaForYield <= 0 and massKg > 0 then
+        local cutWidth = spec.combineMemory and spec.combineMemory.swathWidth
+        if not cutWidth or cutWidth <= 0 then
+            -- EN: Use cached width from previous detection if available.
+            -- UA: Використовуємо кешовану ширину з попередньої детекції, якщо є.
+            cutWidth = spec._cachedForageCutWidth
+        end
+        if not cutWidth or cutWidth <= 0 then
+            -- EN: Probe attached cutter for its working width.
+            --     spec_cutter.workWidth is the most reliable source for forage direct-cut headers.
+            --     workAreas[1].workWidth is often 0 for forage cutters in FS25 — checked last.
+            -- UA: Знаходимо ширину підключеної жатки.
+            local sc = self.spec_combine
+            if sc and sc.attachedCutters then
+                for c, _ in pairs(sc.attachedCutters) do
+                    if c.spec_cutter and (c.spec_cutter.workWidth or 0) > 0 then
+                        cutWidth = c.spec_cutter.workWidth
+                    end
+                    if (not cutWidth or cutWidth <= 0) and type(c.getWorkAreaWidth) == "function" then
+                        cutWidth = c:getWorkAreaWidth(1) or 0
+                    end
+                    if not cutWidth or cutWidth <= 0 then
+                        local wa = c.spec_workArea
+                        if wa and wa.workAreas and wa.workAreas[1] then
+                            cutWidth = wa.workAreas[1].workWidth or 0
+                        end
+                    end
+                    if cutWidth and cutWidth > 0 then break end
+                end
+            end
+            if cutWidth and cutWidth > 0 then
+                spec._cachedForageCutWidth = cutWidth  -- EN: cache to skip detection next tick
+            end
+        end
+        if cutWidth and cutWidth > 0 then
+            -- EN: lastMovedDistance is FS25's per-tick distance (meters). At 4 mph ≈ 0.4 m/tick.
+            -- UA: lastMovedDistance — відстань за тік у метрах.
+            local dist = self.lastMovedDistance or 0
+            areaForYield = dist * cutWidth
+        end
+    end
     
     -- EN: Update time-of-day moisture factor (cached, cheap call).
     -- UA: Оновлюємо коефіцієнт вологості часу доби (кешується, дешевий виклик).
@@ -1104,11 +1191,18 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
         -- EN: Calculate total crop loss including settings deviation penalty.
         -- UA: Розраховуємо загальні втрати врожаю включаючи штраф за відхилення налаштувань.
         local cropLoss = spec.loadCalculator:calculateTotalCropLoss()
+        local thrLoss   = spec.loadCalculator.thrLoss  or 0
+        local cleanLoss = spec.loadCalculator.cleanLoss or 0
         spec.combineMemory:updateStatistics(liters, cropLoss, spec.combineMemory.currentCrop)
 
-        -- EN: Update session statistics.
-        -- UA: Оновлюємо статистику сесії.
-        spec.loadCalculator:updateSession(massKg, areaForYield, cropLoss, headerLoss)
+        if RHM_Debug and RHM_Debug.isEnabled("LoadCalculator") then
+            print(string.format("RHM [Combine tick] cropLoss=%.2f thr=%.2f clean=%.2f hdr=%.2f liters=%.1f",
+                cropLoss, thrLoss, cleanLoss, headerLoss, liters))
+        end
+
+        -- EN: Update session statistics — new signature includes liters and split losses.
+        -- UA: Оновлюємо статистику сесії — новий підпис включає літри та розділені втрати.
+        spec.loadCalculator:updateSession(massKg, areaForYield, liters, thrLoss, cleanLoss, headerLoss)
         
         if cropLoss > 0 and g_realisticHarvestManager and g_realisticHarvestManager.settings then
             if g_realisticHarvestManager.settings.enableCropLoss then
@@ -1142,22 +1236,42 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
     -- EN: Reset all per-tick accumulators after processing.
     -- UA: Скидаємо всі накопичувачі за тік після обробки.
     spec.lastArea = 0
-    spec.lastRawArea = 0
     spec.lastLiters = 0
     spec._fallbackLiters = 0
     
+    -- EN: Read grain moisture from external 'Moisture System' mod (if installed and enabled).
+    --     Try object-level moisture first (most accurate), fall back to world-position query.
+    -- UA: Зчитуємо вологість зерна з зовнішнього моду (якщо встановлений і увімкнений).
+    local grainMoisture = 0
+    if MoistureAdapter and MoistureAdapter.isActive
+       and g_realisticHarvestManager and g_realisticHarvestManager.settings
+       and g_realisticHarvestManager.settings.enableMoisture
+       and cutterIsTurnedOn then
+        local fillType = spec_combine.lastValidInputFruitType or FillType.UNKNOWN
+        if fillType ~= FillType.UNKNOWN then
+            grainMoisture = MoistureAdapter.getObjectMoisture(self.components[1].node, fillType)
+        end
+        if grainMoisture == 0 then
+            local mx, _, mz = getWorldTranslation(self.components[1].node)
+            grainMoisture = MoistureAdapter.getMoistureAtPosition(mx, mz)
+        end
+    end
+
     -- EN: Update HUD live data table from LoadCalculator outputs.
     -- UA: Оновлюємо таблицю живих даних HUD з виводів LoadCalculator.
     if spec.data then
         local lc = spec.loadCalculator
         spec.data.load             = lc:getEngineLoad()
-        spec.data.cropLoss         = lc:calculateTotalCropLoss()
+        spec.data.cropLoss         = lc:calculateTotalCropLoss()  -- EN: total, for backward compat
+        spec.data.thrLoss          = lc.thrLoss   or 0
+        spec.data.cleanLoss        = lc.cleanLoss or 0
         spec.data.headerLoss       = lc.headerLoss or 0
         spec.data.tonPerHour       = lc:getTonPerHour()
         spec.data.litersPerHour    = lc:getLitersPerHour()
         spec.data.yield            = lc.currentYield or 0
         spec.data.isPlugged        = lc.isPlugged or false
         spec.data.moistureLabel    = lc.moistureLabel or ""
+        spec.data.grainMoisture    = grainMoisture or 0
         -- EN: plugTimerPct: 0-100% progress toward a plug, for HUD pre-warning ramp.
         -- UA: plugTimerPct: 0-100% прогрес до засмічення для попереднього попередження HUD.
         spec.data.plugTimerPct     = math.min(100, ((lc.plugTimer or 0) / 10000) * 100)
@@ -1273,7 +1387,8 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
             else
                 -- Пороги чутливості для зменшення трафіку
                 if math.abs((data.load or 0) - (last.load or 0)) > 2.0 then hasSignificantChange = true
-                elseif math.abs((data.cropLoss or 0) - (last.cropLoss or 0)) > 0.5 then hasSignificantChange = true
+                elseif math.abs((data.cropLoss  or 0) - (last.cropLoss  or 0)) > 0.5 then hasSignificantChange = true
+                elseif math.abs((data.cleanLoss or 0) - (last.cleanLoss or 0)) > 0.3 then hasSignificantChange = true
                 elseif math.abs((data.recommendedSpeed or 0) - (last.recommendedSpeed or 0)) > 0.2 then hasSignificantChange = true
                 elseif math.abs((data.yield or 0) - (last.yield or 0)) > 0.1 then hasSignificantChange = true
                 elseif data.overloadLevel ~= last.overloadLevel then hasSignificantChange = true
@@ -1287,6 +1402,8 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
                 spec.lastDataUpdateTime = now
                 spec.lastSyncedData.load            = data.load
                 spec.lastSyncedData.cropLoss        = data.cropLoss
+                spec.lastSyncedData.thrLoss         = data.thrLoss
+                spec.lastSyncedData.cleanLoss       = data.cleanLoss
                 spec.lastSyncedData.headerLoss      = data.headerLoss
                 spec.lastSyncedData.recommendedSpeed= data.recommendedSpeed
                 spec.lastSyncedData.yield           = data.yield
@@ -1538,6 +1655,8 @@ function rhm_Combine:onReadUpdateStream(streamId, timestamp, connection)
             -- HUD data
             spec.data.load             = streamReadFloat32(streamId)
             spec.data.cropLoss         = streamReadFloat32(streamId)
+            spec.data.thrLoss          = streamReadFloat32(streamId)
+            spec.data.cleanLoss        = streamReadFloat32(streamId)
             spec.data.headerLoss       = streamReadFloat32(streamId)
             spec.data.tonPerHour       = streamReadFloat32(streamId)
             spec.data.litersPerHour    = streamReadFloat32(streamId)
@@ -1598,6 +1717,8 @@ function rhm_Combine:onWriteUpdateStream(streamId, connection, dirtyMask)
             local data = spec.data or {}
             streamWriteFloat32(streamId, data.load             or 0)
             streamWriteFloat32(streamId, data.cropLoss         or 0)
+            streamWriteFloat32(streamId, data.thrLoss          or 0)
+            streamWriteFloat32(streamId, data.cleanLoss        or 0)
             streamWriteFloat32(streamId, data.headerLoss       or 0)
             streamWriteFloat32(streamId, data.tonPerHour       or 0)
             streamWriteFloat32(streamId, data.litersPerHour    or 0)

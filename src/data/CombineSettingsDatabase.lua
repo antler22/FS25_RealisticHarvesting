@@ -2,7 +2,7 @@
 --     Stores parameter templates for every supported crop type, maps FS25 FillType enums
 --     to internal crop names, and defines which parameters are active for each machine type.
 --     GRAIN:  rotor (RPM) | concave (mm) | upperSieve/Chaffer (mm) | lowerSieve/Sieve (mm) | fan (RPM)
---     FORAGE: chopLength (mm) | kernelProcessor (mm) | blower (mm gap)
+--     FORAGE: chopLength (mm) | kernelProcessor (mm) | acceleratorGap (mm gap)
 --     ROOT:   rotor/CleaningRollers (RPM) | shakingIntensity (1-5) | feeder/Elevator (RPM)
 --     COTTON: fan | rotor | feeder
 -- UA: Статична база даних оптимальних налаштувань комбайна та профілів культур.
@@ -186,29 +186,46 @@ local templates = {
 
     -- ============================
     -- FORAGE HARVESTER TEMPLATES
-    -- Params: chopLength (3-25 mm) | kernelProcessor (0-5 mm) | blower (0-6 mm gap)
-    -- Optimal settings depend on crop moisture. No crop losses for forage harvesters.
-    -- kernelProcessor only relevant for corn silage (improves digestibility).
+    -- Params: chopLength (3-25 mm) | kernelProcessor (0-5 mm) | acceleratorGap (0-6 mm gap)
+    -- Optimal settings affect chop quality and nutritional loss. Poor settings → Loss% in HUD.
+    -- kernelProcessor relevant for all crops; critical for corn silage kernel cracking.
     -- ============================
 
     -- Grass / Dry Grass — shorter chop for better fermentation, no kernel processor needed
     forage_grass = {
         chopLength      = {optimal = 27, min = 0,  max = 100, tolerance = 15},  -- ~6 mm (typical grass)
         kernelProcessor = {optimal = 0,  min = 0,  max = 100, tolerance = 50},  -- not needed for grass
-        blower          = {optimal = 50, min = 20, max = 80,  tolerance = 15},  -- 3 mm gap (mid)
+        acceleratorGap  = {optimal = 50, min = 20, max = 80,  tolerance = 15},  -- 3 mm gap (mid)
     },
     forage_grass_windrow = {
         chopLength      = {optimal = 18, min = 0,  max = 100, tolerance = 15},  -- ~5 mm (drier = shorter)
         kernelProcessor = {optimal = 0,  min = 0,  max = 100, tolerance = 50},  -- not needed
-        blower          = {optimal = 50, min = 20, max = 80,  tolerance = 15},  -- 3 mm gap
+        acceleratorGap  = {optimal = 50, min = 20, max = 80,  tolerance = 15},  -- 3 mm gap
     },
 
-    -- Corn Silage — longer chop ok, kernel processor essential
-    -- ChopLength: 8-12mm → ~36-50%, KernelProcessor: 2-3mm → 40-60%, Blower: 3mm → 50%
+    -- Corn Silage — long chop (22mm) for rumen particle size, tight KP to crack all kernels
+    -- ChopLength: 22mm → 86%, KernelProcessor: 0.5mm → 10%, AcceleratorGap: 1mm → 17%
+    -- Ranges: chopLength 3-25mm, kernelProcessor 0-5mm, acceleratorGap 0-6mm
     forage_corn = {
-        chopLength      = {optimal = 43, min = 13, max = 73, tolerance = 14},  -- ~9 mm
-        kernelProcessor = {optimal = 50, min = 20, max = 80,  tolerance = 15},  -- ~2.5 mm gap (important!)
-        blower          = {optimal = 50, min = 20, max = 80,  tolerance = 15},  -- 3 mm gap
+        chopLength      = {optimal = 86, min = 72, max = 100, tolerance = 14},  -- 22 mm
+        kernelProcessor = {optimal = 10, min =  0, max =  20, tolerance = 10},  -- 0.5 mm (tight — full kernel crack)
+        acceleratorGap  = {optimal = 17, min =  9, max =  25, tolerance =  8},  -- 1 mm
+    },
+
+    -- Alfalfa / Haylage — short chop for dense bales, wide KP (no kernels to crack)
+    -- ChopLength: 6mm → 14%, KernelProcessor: 4mm → 80%, AcceleratorGap: 4mm → 67%
+    forage_alfalfa = {
+        chopLength      = {optimal = 14, min =  5, max = 23, tolerance =  9},  -- 6 mm
+        kernelProcessor = {optimal = 80, min = 60, max = 100, tolerance = 20},  -- 4 mm gap (wide — conditioning only)
+        acceleratorGap  = {optimal = 67, min = 50, max = 84, tolerance = 17},  -- 4 mm gap
+    },
+
+    -- Mint — minimum chop length for maximum oil release, medium KP and blower
+    -- ChopLength: 3mm → 0%, KernelProcessor: 3mm → 60%, AcceleratorGap: 3mm → 50%
+    forage_mint = {
+        chopLength      = {optimal =  0, min =  0, max =  7, tolerance =  7},  -- 3 mm (minimum length)
+        kernelProcessor = {optimal = 60, min = 40, max = 80, tolerance = 20},  -- 3 mm gap
+        acceleratorGap  = {optimal = 50, min = 42, max = 58, tolerance =  8},  -- 3 mm gap
     },
 
     -- ============================
@@ -295,7 +312,7 @@ CombineSettingsDatabase.machineParams = {
     grain  = { "rotor", "concave", "upperSieve", "lowerSieve", "fan" },
     -- EN: FORAGE: Chop Length → Kernel Processor → Blower Gap (no losses for forage)
     -- UA: ФОРАЖНІ: Довжина різки → Процесор зерна → Зазор вентилятора (немає втрат)
-    forage = { "chopLength", "kernelProcessor", "blower" },
+    forage = { "chopLength", "kernelProcessor", "acceleratorGap" },
     -- EN: ROOT: Cleaning Rollers → Shaking Intensity → Elevator (no fan on real machines)
     -- UA: КОРЕНЕПЛОДИ: Очисні ролики → Інтенсивність струшування → Елеватор
     root   = { "rotor", "shakingIntensity", "feeder" },
@@ -315,7 +332,7 @@ CombineSettingsDatabase.machineParamLabels = {
     forage = {
         chopLength      = "rhm_ui_chop_length",
         kernelProcessor = "rhm_ui_kernel_processor",
-        blower          = "rhm_ui_blower_gap",
+        acceleratorGap  = "rhm_ui_accelerator_gap",
     },
     root = {
         rotor            = "rhm_ui_root_roller",
@@ -416,7 +433,10 @@ CombineSettingsDatabase.crops = {
     ["DRYGRASS"]= { name = "Суха Трава",  nameEN = "Dry Grass",    template = templates.forage_grass,  machineType = "forage", group = "forage", fillType = safeFillType(FillType.DRYGRASS) },
     ["GRASS_WINDROW"]   = { name = "Валок Трави",       nameEN = "Grass Windrow",        template = templates.forage_grass_windrow,  machineType = "forage", group = "forage", fillType = safeFillType(FillType.GRASS_WINDROW) },
     ["DRYGRASS_WINDROW"]= { name = "Валок Сухої Трави", nameEN = "Dry Grass Windrow",    template = templates.forage_grass_windrow,  machineType = "forage", group = "forage", fillType = safeFillType(FillType.DRYGRASS_WINDROW) },
-    ["MAIZE_FORAGE"] = { name = "Кукурудза на силос", nameEN = "Corn Silage", template = templates.forage_corn, machineType = "forage", group = "forage", fillType = safeFillType(FillType.MAIZE) },
+    ["MAIZE_FORAGE"] = { name = "Кукурудза на силос", nameEN = "Corn Silage",     template = templates.forage_corn,    machineType = "forage", group = "forage", fillType = safeFillType(FillType.MAIZE) },
+    ["ALFALFA"]      = { name = "Люцерна",            nameEN = "Alfalfa",         template = templates.forage_alfalfa, machineType = "forage", group = "forage", fillType = safeFillType(FillType.ALFALFA) },
+    ["CLOVER"]       = { name = "Конюшина",           nameEN = "Clover",          template = templates.forage_alfalfa, machineType = "forage", group = "forage", fillType = safeFillType(FillType.CLOVER) },
+    ["MINT"]         = { name = "М'ята",              nameEN = "Mint",            template = templates.forage_mint,    machineType = "forage", group = "forage", fillType = safeFillType(FillType.MINT) },
 
     -- Бавовник (machineType = "cotton")
     ["COTTON"] = { name = "Бавовник", nameEN = "Cotton", template = templates.cotton_picker, machineType = "cotton", group = "cotton", fillType = safeFillType(FillType.COTTON) },
@@ -432,6 +452,52 @@ function CombineSettingsDatabase:getSettingsForCrop(cropName)
         return crop.template
     end
     return nil
+end
+
+-- EN: Returns a "baseline" settings table for a crop — each parameter is set one tolerance-step
+--     off optimal in the direction of a typical novice mistake. This gives new players roughly
+--     ~1% separation loss and ~1.5% cleaning loss (~2.5% total, "Good" rating) without any tuning,
+--     while still leaving meaningful room for improvement through manual settings or upgrades.
+--
+--     Novice directions (real-world common mistakes):
+--       rotor       +tol  — operators run rotor too fast, thinking faster = more threshing
+--       concave     -tol  — operators close the gap too tight, trying to squeeze grain out
+--       fan         -tol  — operators run fan too slow, afraid of blowing grain out cleaning shoe
+--       upperSieve  +tol  — operators open chaffer wide thinking "more open = more grain through"
+--       lowerSieve  +tol  — same logic as upper sieve
+--       feeder      -tol  — operators feed too cautiously / too slow
+--       shakingInt  +tol  — operators shake too aggressively
+--
+--     Returns nil if crop is unknown (falls back to 50% in CombineMemory).
+-- UA: Повертає "базові" налаштування для культури — кожен параметр відхилений на одну одиницю
+--     tolerance у напрямку типової помилки новачка, даючи ~2.5% загальних втрат ("Good" рейтинг).
+function CombineSettingsDatabase:getBaselineForCrop(cropName)
+    local template = self:getSettingsForCrop(cropName)
+    if not template then return nil end
+
+    -- EN: Direction of the novice-mistake offset per parameter name.
+    --     +1 = higher than optimal, -1 = lower than optimal.
+    -- UA: Напрямок відхилення від оптимального для кожного параметру.
+    local directions = {
+        rotor            = 1,    -- EN: too fast (aggressive)
+        concave          = -1,   -- EN: too tight (closed gap)
+        fan              = -1,   -- EN: too slow (under-blowing)
+        upperSieve       = 1,    -- EN: too open (grain falls through)
+        lowerSieve       = 1,    -- EN: too open
+        feeder           = -1,   -- EN: too slow (under-feeding)
+        shakingIntensity = 1,    -- EN: too aggressive
+        chopLength       = 1,    -- EN: too long (novice default — longer chop feels safer)
+        kernelProcessor  = 1,    -- EN: gap too wide (under-processing kernels)
+        acceleratorGap   = 1,    -- EN: gap too large (reduced acceleration force)
+    }
+
+    local baseline = {}
+    for param, data in pairs(template) do
+        local dir    = directions[param] or 0
+        local offset = data.tolerance * dir
+        baseline[param] = math.max(0, math.min(100, data.optimal + offset))
+    end
+    return baseline
 end
 
 -- EN: Converts a game FillType integer to the internal crop name used in the database.
@@ -507,6 +573,9 @@ function CombineSettingsDatabase:getCropNameFromFillType(fillType)
         ["GRASS_WINDROW"] = "GRASS_WINDROW",
         ["DRYGRASS_WINDROW"] = "DRYGRASS_WINDROW",
         ["SILAGE"] = "MAIZE_FORAGE",
+        ["ALFALFA"] = "ALFALFA",
+        ["CLOVER"] = "CLOVER",
+        ["MINT"] = "MINT",
 
         -- Cotton
         ["COTTON"] = "COTTON",

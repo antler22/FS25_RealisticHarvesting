@@ -42,8 +42,9 @@ function Settings.new(manager)
 
     -- EN: Feature toggle flags (server-side, global for all players).
     -- UA: Прапорці перемикання функцій (серверні, глобальні для всіх гравців).
-    self.enableSpeedLimit = true
+    -- EN: enableSpeedLimit removed — speed automation is now gated by upgrade level 3 (purchased in shop).
     self.enableCropLoss = true
+    self.enableMoisture = true  -- EN: Toggle grain moisture penalties (requires 'Moisture System' mod) / UA: Перемикач штрафів за вологість зерна
     self.showHUD = true
     self.showYield = true
     self.showSpeedometer = true
@@ -55,6 +56,7 @@ function Settings.new(manager)
     self.showProductivity = true
     self.showCropLoss = true
     self.showSpeed = true
+    self.showMoisture = true    -- EN: Show grain moisture % row in HUD (only visible when 'Moisture System' mod is active) / UA: Показувати рядок вологості зерна в HUD
     self.showLoadWarnings = true
 
     -- EN: HUD position (client-side). nil = automatic positioning.
@@ -203,7 +205,6 @@ end
 function Settings:resetToDefaults()
     self.difficultyLoss = Settings.DIFFICULTY_NORMAL
     self.difficultyMotor = Settings.DIFFICULTY_NORMAL
-    self.enableSpeedLimit = true
     self.enableCropLoss = true
     self.showHUD = true
     self.showYield = true

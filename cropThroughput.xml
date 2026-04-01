@@ -130,4 +130,64 @@
           buPerHrMin="750"
           buPerHrMax="2400" />
 
+    <!-- ── Forage crops ──────────────────────────────────────────────────────
+         HP anchors: tPerHrMin @ 400 hp (small/mid forage harvester)
+                     tPerHrMax @ 950 hp (CLAAS Jaguar 990 / JD 9900 class)
+
+         Values are in US SHORT TONS per hour (1 US short ton = 2000 lbs = 907 kg).
+         The mod converts to kg/s internally. FS25 HUD always displays metric t/hr —
+         to see what the HUD will show, multiply your value by 0.907.
+             e.g. 455 US t/hr × 0.907 ≈ 413 metric t/hr on the HUD at 100% load
+
+         Tune tPerHrMin / tPerHrMax to set the throughput envelope for each crop.
+         Check the mod log for "[RHM] BasePerfMass:" to verify HP detection at startup.
+
+                        400 hp              950 hp
+         Corn silage    200 US t/hr         455 US t/hr   (reference — factor 1.00)
+         Alfalfa        169 US t/hr         380 US t/hr   (factor 1.20 — tougher per kg)
+         Grass (fresh)  150 US t/hr         338 US t/hr   (factor 1.35 — highest resistance)
+         Dry grass      184 US t/hr         415 US t/hr   (factor 1.10)
+         Clover         169 US t/hr         380 US t/hr   (factor 1.20)
+         Triticale sil  225 US t/hr         507 US t/hr   (factor 0.90 — easier per kg)
+         Sorghum sil    238 US t/hr         537 US t/hr   (factor 0.85)
+         Sugarcane      290 US t/hr         652 US t/hr   (factor 0.70)
+         Mint           184 US t/hr         415 US t/hr   (factor 1.10)
+    -->
+
+    <crop name="maize"
+          tPerHrMin="200"
+          tPerHrMax="455" />
+
+    <crop name="alfalfa"
+          tPerHrMin="169"
+          tPerHrMax="380" />
+
+    <crop name="grass"
+          tPerHrMin="150"
+          tPerHrMax="338" />
+
+    <crop name="drygrass"
+          tPerHrMin="184"
+          tPerHrMax="415" />
+
+    <crop name="clover"
+          tPerHrMin="169"
+          tPerHrMax="380" />
+
+    <crop name="triticale"
+          tPerHrMin="225"
+          tPerHrMax="507" />
+
+    <crop name="sorghum"
+          tPerHrMin="238"
+          tPerHrMax="537" />
+
+    <crop name="sugarcane"
+          tPerHrMin="290"
+          tPerHrMax="652" />
+
+    <crop name="mint"
+          tPerHrMin="184"
+          tPerHrMax="415" />
+
 </cropThroughput>

@@ -35,9 +35,12 @@ function SettingsUI:inject()
         return
     end
 
-    local layout = page.generalSettingsLayout
+    -- EN: Use gameSettingsLayout (the "Game" tab) — that's where game-behaviour settings live.
+    --     generalSettingsLayout is the "General" (audio/accessibility) tab; wrong location for us.
+    -- UA: Використовуємо gameSettingsLayout (вкладка "Гра") — там знаходяться налаштування поведінки гри.
+    local layout = page.gameSettingsLayout
     if not layout then
-        Logging.error("RHM: Settings layout not found!")
+        Logging.error("RHM: gameSettingsLayout not found — cannot inject settings!")
         return
     end
 
@@ -102,26 +105,9 @@ function SettingsUI:inject()
     if diffLossOpt.setDisabled then diffLossOpt:setDisabled(not isAdmin) end
     self.difficultyLossOption = diffLossOpt
 
-    -- EN: Speed limit toggle — enables/disables the dynamic speed limiting feature.
-    -- UA: Перемикач ліміту швидкості — вмикає/вимикає функцію динамічного обмеження швидкості.
-    local speedLimitOpt = UIHelper.createBinaryOption(
-        layout,
-        "rhm_speedlimit",
-        "rhm_speedlimit",
-        self.settings.enableSpeedLimit,
-        function(val)
-            if not self.settings:canChangeServerSettings() then return end
-            self.settings.enableSpeedLimit = val
-            self.settings:save()
-            if g_currentMission.missionDynamicInfo.isMultiplayer and SettingsSync then
-                SettingsSync:sendToClients(self.settings)
-            end
-        end
-    )
-    if speedLimitOpt.setDisabled then
-        speedLimitOpt:setDisabled(not isAdmin)
-    end
-    self.speedLimitOption = speedLimitOpt
+    -- EN: Speed Automation is now gated by upgrade level 3 (purchased in the shop).
+    --     The per-setting toggle has been removed — buy "Speed Automation" to unlock it.
+    -- UA: Автоматизація швидкості тепер контролюється рівнем апгрейду 3 (купується в магазині).
 
     -- EN: Crop loss toggle — enables/disables the crop loss simulation feature.
     -- UA: Перемикач втрат врожаю — вмикає/вимикає симуляцію втрат врожаю.
@@ -251,11 +237,6 @@ function SettingsUI:refreshUI()
 
     -- EN: Refresh server-side feature toggles.
     -- UA: Оновлюємо серверні перемикачі функцій.
-    if self.speedLimitOption and self.speedLimitOption.setIsChecked then
-        self.speedLimitOption:setIsChecked(self.settings.enableSpeedLimit)
-        if self.speedLimitOption.setDisabled then self.speedLimitOption:setDisabled(not isAdmin) end
-    end
-
     if self.cropLossOption and self.cropLossOption.setIsChecked then
         self.cropLossOption:setIsChecked(self.settings.enableCropLoss)
         if self.cropLossOption.setDisabled then self.cropLossOption:setDisabled(not isAdmin) end

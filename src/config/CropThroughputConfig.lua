@@ -40,6 +40,13 @@ local HP_MIN = 280.0   -- AEM Class 6 (e.g. JD S670, Case 7250)
 local HP_MAX = 750.0   -- AEM Class 10 / AF11 (e.g. JD X9 1100, Case AF9240)
 local REF_HP = 400.0   -- Reference HP used when only buPerHrRef is supplied
 
+-- EN: Forage harvester HP anchor points.
+--     Min = small/mid-size forage harvester (e.g. CLAAS Jaguar 870 class)
+--     Max = flagship forage harvester (e.g. CLAAS Jaguar 990 / JD 9900)
+-- UA: Опорні точки к.с. для форажних комбайнів.
+local HP_MIN_FORAGE = 400.0   -- small/mid forage harvester
+local HP_MAX_FORAGE = 950.0   -- flagship forage harvester (Jaguar 990 / JD 9900)
+
 -- ---------------------------------------------------------------------------
 -- EN: USDA standard test weights (lbs/bu) — authoritative conversion factors.
 -- UA: Стандартна вага бушеля USDA (фунти/бу).
@@ -117,7 +124,8 @@ end
 -- UA: Завантажуємо та розбираємо XML продуктивності культур.
 -- ---------------------------------------------------------------------------
 function CropThroughputConfig.load()
-    CropThroughputConfig._data   = {}
+    CropThroughputConfig._data        = {}
+    CropThroughputConfig._forageData  = {}
     CropThroughputConfig._loaded = false
     CropThroughputConfig._source = "none"
 
@@ -139,17 +147,35 @@ function CropThroughputConfig.load()
         local key = string.format("cropThroughput.crop(%d)", i)
         if not hasXMLProperty(xmlFile, key) then break end
 
-        local name  = getXMLString(xmlFile, key .. "#name")
-        local buMin = getXMLFloat (xmlFile, key .. "#buPerHrMin")
-        local buMax = getXMLFloat (xmlFile, key .. "#buPerHrMax")
-        local buRef = getXMLFloat (xmlFile, key .. "#buPerHrRef")
+        local name   = getXMLString(xmlFile, key .. "#name")
+        local buMin  = getXMLFloat (xmlFile, key .. "#buPerHrMin")
+        local buMax  = getXMLFloat (xmlFile, key .. "#buPerHrMax")
+        local buRef  = getXMLFloat (xmlFile, key .. "#buPerHrRef")
+        local tMin   = getXMLFloat (xmlFile, key .. "#tPerHrMin")
+        local tMax   = getXMLFloat (xmlFile, key .. "#tPerHrMax")
 
         if name then
             local cropKey = name:lower()
 
-            if buMin and buMax and buMin > 0 and buMax > 0 then
-                -- EN: Two-point anchor → derive per-crop power-law curve.
-                -- UA: Дві опорні точки → виводимо криву степеневого закону для культури.
+            if tMin and tMax and tMin > 0 and tMax > 0 then
+                -- EN: Forage crop — two-point anchor in US short tons/hr at HP_MIN_FORAGE / HP_MAX_FORAGE.
+                --     1 US short ton = 907.185 kg  →  US t/hr × 907.185 / 3600 = kg/s
+                --     HP anchor points are 400 hp (small forage) and 950 hp (Jaguar 990 class).
+                -- UA: Форажна культура — дві опорні точки у американських коротких тоннах/год.
+                --     1 US short ton = 907.185 кг  →  US т/год × 907.185 / 3600 = кг/с
+                local US_TON_KG = 907.185
+                local kgsMin = tMin * US_TON_KG / 3600
+                local kgsMax = tMax * US_TON_KG / 3600
+                local B = math.log(kgsMax / kgsMin) / math.log(HP_MAX_FORAGE / HP_MIN_FORAGE)
+                local A = kgsMin / (HP_MIN_FORAGE ^ B)
+                if A > 0 and B > 0 then
+                    CropThroughputConfig._forageData[cropKey] = { coef = A, exp = B }
+                    count = count + 1
+                end
+
+            elseif buMin and buMax and buMin > 0 and buMax > 0 then
+                -- EN: Grain crop — two-point anchor in bu/hr at HP_MIN / HP_MAX.
+                -- UA: Зернова культура — дві опорні точки у бу/год.
                 local kgsMin = buPerHrToKgPerSec(buMin, cropKey)
                 local kgsMax = buPerHrToKgPerSec(buMax, cropKey)
                 local curve  = deriveCurve(kgsMin, kgsMax)
@@ -177,9 +203,13 @@ function CropThroughputConfig.load()
     CropThroughputConfig._loaded = true
     CropThroughputConfig._source = source
 
+    local grainCount  = 0
+    local forageCount = 0
+    for _ in pairs(CropThroughputConfig._data)       do grainCount  = grainCount  + 1 end
+    for _ in pairs(CropThroughputConfig._forageData) do forageCount = forageCount + 1 end
     Logging.info(string.format(
-        "[RHM] CropThroughputConfig: loaded %d crops from %s config (%s)",
-        count, source, path))
+        "[RHM] CropThroughputConfig: loaded %d grain + %d forage crops from %s config (%s)",
+        grainCount, forageCount, source, path))
 end
 
 -- ---------------------------------------------------------------------------
@@ -195,6 +225,22 @@ end
 function CropThroughputConfig.getCurveParams(cropName)
     if not cropName then return nil end
     return CropThroughputConfig._data[cropName:lower()]
+end
+
+-- ---------------------------------------------------------------------------
+-- EN: Return forage power-law curve params {coef, exp} for a fruit type name, or nil.
+--     Anchored at HP_MIN_FORAGE (400 hp) and HP_MAX_FORAGE (950 hp).
+--     Throughput entries use tPerHrMin / tPerHrMax (fresh t/hr) in the XML.
+--
+--     Usage:
+--         local p = CropThroughputConfig.getForageCurveParams("MAIZE")
+--         if p then basePerfMass = p.coef * (hp ^ p.exp) end
+--
+-- UA: Повертає форажні параметри кривої {coef, exp} для назви типу плоду або nil.
+-- ---------------------------------------------------------------------------
+function CropThroughputConfig.getForageCurveParams(cropName)
+    if not cropName then return nil end
+    return CropThroughputConfig._forageData[cropName:lower()]
 end
 
 -- ---------------------------------------------------------------------------

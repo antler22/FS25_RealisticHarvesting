@@ -32,7 +32,7 @@ local PARAM_SECTION_MAP = {
     lowerSieve      = "CLEANING",
     chopLength      = "SEPARATION",   -- forage chop length (3-25mm)
     kernelProcessor = "SEPARATION",   -- forage kernel processor gap (0-5mm)
-    blower          = "DISCHARGE",    -- forage blower gap (0-6mm)
+    acceleratorGap  = "DISCHARGE",    -- forage crop accelerator gap (0-6mm)
     shakingIntensity = "SEPARATION",  -- root harvester shaking intensity (1-5)
 }
 
@@ -56,21 +56,23 @@ function CombineCalibrationGUI.new(modDirectory)
     self.debug = true
 
     -- EN: UI layout — industrial dark theme with amber accents.
-    -- UA: Розмітка UI — індустріальна темна тема з бурштиновими акцентами.
+    --     All vertical constants are tuned for compactness — the panel should stay under 50%
+    --     of screen height for both forage (3 params) and grain (5-6 params) machine types.
+    -- UA: Розмітка UI — компактна індустріальна темна тема з бурштиновими акцентами.
     self.ui = {
         x = 0.68, y = 0.45,
         w = 0.30, h = 0.45,
-        margin      = 0.010,
-        headerHeight = 0.038,
-        statsHeight  = 0.026,  -- EN: Live stats bar height / UA: Висота смуги живої статистики
-        lineHeight   = 0.038,  -- EN: Increased from 0.035 to fit progress bar / UA: Збільшено з 0.035 для прогрес-бару
-        sectionGap   = 0.022,  -- EN: Height of each section header row / UA: Висота рядка заголовку секції
+        margin       = 0.008,   -- reduced from 0.010
+        headerHeight = 0.032,   -- reduced from 0.038
+        statsHeight  = 0.022,   -- reduced from 0.026
+        lineHeight   = 0.030,   -- reduced from 0.038 — primary vertical unit for all rows
+        sectionGap   = 0.015,   -- reduced from 0.022 — section header strip height
         fontSize    = 0.013,
         titleSize   = 0.018,
-        sectionSize = 0.012,   -- EN: Section label font size / UA: Розмір шрифту мітки секції
-        statusSize  = 0.011,   -- EN: Status hint font size / UA: Розмір шрифту підказки статусу
+        sectionSize = 0.012,
+        statusSize  = 0.011,
         buttonW     = 0.026,
-        buttonH     = 0.022,
+        buttonH     = 0.020,   -- reduced from 0.022
 
         -- EN: Industrial dark color palette.
         -- UA: Індустріальна темна кольорова палітра.
@@ -359,28 +361,29 @@ function CombineCalibrationGUI:draw()
         end
         sectionsShown = sectionsShown + 1  -- +1 for PERFORMANCE section
 
-        -- EN: Harvest Report section height (tier 1+): section header + 4 stat rows + grade row + reset button + separators.
-        -- UA: Висота секції звіту про жнива (рівень 1+): заголовок + 4 рядки + оцінка + кнопка + розділювачі.
+        -- EN: Harvest Report section height (tier 1+): section header + 4 compact stat rows + grade row + reset button.
+        --     Row multipliers are tighter (0.60×lineHeight) to keep the report from dominating the panel.
+        -- UA: Висота секції звіту — компактні рядки (0.60×lineHeight) для зменшення висоти панелі.
         local upgradeLevel = spec.combineMemory.upgradeLevel or 0
         local harvestReportH = 0
         if upgradeLevel >= 1 then
             harvestReportH = ui.sectionGap                  -- section header bar
-                           + ui.lineHeight * 0.75 * 4       -- 4 stat rows
-                           + ui.lineHeight * 0.80           -- grade row
-                           + ui.lineHeight * 0.85           -- reset button
-                           + ui.margin * 1.0                -- separator margins
+                           + ui.lineHeight * 0.60 * 4       -- 4 compact stat rows (was 0.75)
+                           + ui.lineHeight * 0.65           -- grade row (was 0.80)
+                           + ui.lineHeight * 0.75           -- reset button (was 0.85)
+                           + ui.margin * 0.8                -- separator margins (was 1.0)
         end
 
         local dynamicH = ui.headerHeight
                        + ui.statsHeight
                        + ui.lineHeight        -- crop row
-                       + ui.margin * 0.5
+                       + ui.margin * 0.3     -- reduced from * 0.5
                        + (sectionsShown * ui.sectionGap)
                        + (numParams * ui.lineHeight)
-                       + ui.lineHeight * 2.2  -- action buttons
-                       + ui.lineHeight * 0.8  -- close hint
+                       + ui.lineHeight * 2.0  -- action buttons (was 2.2)
+                       + ui.lineHeight * 0.6  -- swath width row (was 0.8)
                        + harvestReportH
-                       + ui.margin * 4
+                       + ui.margin * 3       -- reduced from * 4
 
         local targetTop = 0.91
         ui.h = dynamicH
@@ -448,9 +451,14 @@ function CombineCalibrationGUI:draw()
 
     local load = (spec.loadCalculator and spec.loadCalculator.engineLoad or 0) * 100
     local effPenalty = 0
-    local lossPenalty = 0
+    -- EN: Sep/Cln use MEASURED values from LoadCalculator (same source as HUD) so they always agree.
+    --     effPenalty (Spd) still uses checkSettingsForCrop — it's a useful ahead-of-time prediction.
+    local thrPenalty  = (spec.data and spec.data.thrLoss)  or 0
+    local cleanPenalty = (spec.data and spec.data.cleanLoss) or 0
+    local lossPenalty  = thrPenalty + cleanPenalty
     if memory.currentCrop then
-        effPenalty, lossPenalty, _ = memory:checkSettingsForCrop(memory.currentCrop)
+        local thrL, clnL
+        effPenalty, thrL, clnL, _ = memory:checkSettingsForCrop(memory.currentCrop)
     end
 
     -- EN: Engine load — colored by threshold.
@@ -476,12 +484,8 @@ function CombineCalibrationGUI:draw()
         else
             speedStr = string.format("-%.1f%%", effPenalty)
         end
-        local lossStr
-        if lossPenalty <= 0 then
-            lossStr = "0.0%"
-        else
-            lossStr = string.format("+%.1f%%", lossPenalty)
-        end
+        local thrStr  = thrPenalty  > 0 and string.format("+%.1f%%", thrPenalty)  or "0%"
+        local clnStr  = cleanPenalty > 0 and string.format("+%.1f%%", cleanPenalty) or "0%"
         local statsTextColor = ui.colors.text
         if lossPenalty > 0.5 or effPenalty > 0.5 then
             statsTextColor = ui.colors.error
@@ -490,34 +494,16 @@ function CombineCalibrationGUI:draw()
         end
         setTextAlignment(RenderText.ALIGN_RIGHT)
         setTextColor(unpack(statsTextColor))
-        renderText(x + w - ui.margin, cy + 0.008, ui.fontSize, "Spd " .. speedStr .. "  Loss " .. lossStr)
-
-        -- EN: Dynamic yield trend hint (Tier 2 Machine Monitor).
-        --     Shows a proactive hint when the combine is not utilizing capacity optimally.
-        -- UA: Підказка тренду врожайності (рівень 2 Machine Monitor).
-        local lc = spec.loadCalculator
-        if lc then
-            local loadPct = (lc.engineLoad or 0) * 100
-            local hdrLoss = lc.headerLoss or 0
-            local trendHint = nil
-            if loadPct > 100 and (lc.upgradeLevel or 0) < 3 then
-                -- EN: No Speed Control tier yet — manual warning.
-                trendHint = "Load high — slow down!"
-            elseif hdrLoss > 2.0 then
-                trendHint = string.format("Hdr loss %.1f%% — reduce speed", hdrLoss)
-            elseif lc.isPlugged then
-                trendHint = "ROTOR PLUGGED — reverse/slow"
-            elseif lossPenalty > 3.0 then
-                trendHint = "Check settings for crop"
-            elseif loadPct < 55 and loadPct > 5 then
-                trendHint = "Under-utilized — increase speed"
-            end
-            if trendHint then
-                setTextAlignment(RenderText.ALIGN_CENTER)
-                setTextColor(0.91, 0.78, 0.25, 0.90)
-                renderText(x + w * 0.5, cy - ui.statusSize * 0.5, ui.statusSize, trendHint)
-            end
+        local statsStr
+        if machineType == "forage" then
+            -- EN: Forage: Processing Score (inverted — 100% = perfect). Shows in GUI stats bar.
+            local lossVal = math.max(0, cleanPenalty)
+            local score   = math.max(0, math.floor(100 - lossVal + 0.5))
+            statsStr = "Spd " .. speedStr .. "  Processing Score: " .. score .. "%"
+        else
+            statsStr = "Spd " .. speedStr .. "  Sep " .. thrStr .. "  Cln " .. clnStr
         end
+        renderText(x + w - ui.margin, cy + 0.008, ui.fontSize, statsStr)
     else
         setTextAlignment(RenderText.ALIGN_RIGHT)
         setTextColor(0.83, 0.54, 0.04, 0.55)
@@ -574,18 +560,32 @@ function CombineCalibrationGUI:draw()
         self:cycleCrop(1)
     end)
 
-    -- EN: AUTO button — visible only with Auto Pilot upgrade (tier 4).
-    --     Shows a dimmed "LOCKED" label for lower tiers.
-    -- UA: Кнопка AUTO — тільки з апгрейдом Автопілот (рівень 4).
+    -- EN: Right-side crop button:
+    --     Level 4 (Full Automation): AUTO toggle — when active, applies optimal on every crop change.
+    --     Level 0-3: LOAD button — one-shot apply of baseline settings for the current crop.
+    --       LOAD gives new players a reasonable starting point without unlocking full auto-management.
+    -- UA: Кнопка праворуч від культури:
+    --     Рівень 4: AUTO перемикач.
+    --     Рівень 0-3: LOAD — разове застосування базових налаштувань для поточної культури.
     local autoBtnW = 0.065
     local autoBtnX = x + w - ui.margin - autoBtnW
     if upgradeLevel >= 4 then
-        self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, g_i18n:getText("rhm_gui_btn_auto"), function()
+        local isAutoOn  = memory.mode == "AUTO"
+        local autoLabel = isAutoOn and "AUTO ●" or "AUTO"
+        local autoColor = isAutoOn
+            and {0.20, 0.75, 0.30, 0.90}
+            or  ui.colors.buttonAuto
+        self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, autoLabel, function()
             memory:requestAutoSettings()
-        end, ui.colors.buttonAuto)
+        end, autoColor)
+    elseif memory.currentCrop then
+        -- EN: LOAD — applies baseline (novice-friendly) settings as a one-shot starting point.
+        self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, "LOAD", function()
+            memory:autoConfigureForCrop(memory.currentCrop, false)
+        end, ui.colors.button)
     else
-        -- EN: Dimmed locked state — no click handler.
-        self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, "LOCKED", nil, {0.15, 0.15, 0.13, 0.40})
+        -- EN: No crop detected yet — dim the button.
+        self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, "LOAD", nil, {0.15, 0.15, 0.13, 0.40})
     end
 
     -- EN: Thin separator under crop row.
@@ -619,6 +619,9 @@ function CombineCalibrationGUI:draw()
             setTextAlignment(RenderText.ALIGN_CENTER)
             setTextColor(unpack(ui.colors.accent))
             local sectionName = g_i18n:hasText(section.label) and g_i18n:getText(section.label) or section.key
+            if section.key == "SEPARATION" and machineType == "forage" then
+                sectionName = "Chopper Settings"
+            end
             renderText(x + w * 0.5, cy + 0.006, ui.sectionSize, string.upper(sectionName))
 
             -- EN: No horizontal rule anymore if centered, it looks cleaner.
@@ -672,10 +675,12 @@ function CombineCalibrationGUI:draw()
     self:drawRect(x + ui.margin, cy, w - ui.margin * 2, 0.001, ui.colors.separator)
     cy = cy - ui.margin * 0.6
 
-    -- ── Harvest Report (Calibration tier 1+) ────────────────────────────────
-    -- EN: Show session stats + grade + reset button when player has at least Calibration upgrade.
-    -- UA: Показуємо статистику сесії + оцінку + кнопку скидання при наявності рівня 1+.
-    if upgradeLevel >= 1 and spec.loadCalculator then
+    -- ── Harvest Report (always visible) ─────────────────────────────────────
+    -- EN: Show session stats + grade + reset button. Always shown — store purchase gates removed
+    --     until in-store purchasing is confirmed working end-to-end.
+    -- UA: Показуємо статистику сесії + оцінку + кнопку скидання. Завжди видно — гейт апгрейду
+    --     прибрано поки купівля у магазині не підтверджена.
+    if spec.loadCalculator then
         cy = cy - ui.sectionGap
         self:drawRect(x, cy + 0.002, w, ui.sectionGap - 0.004, {0, 0, 0, 0.40})
         setTextBold(true)
@@ -695,26 +700,34 @@ function CombineCalibrationGUI:draw()
         local col2x = x + w * 0.50
 
         local function statRow(label, val1, label2, val2)
-            cy = cy - ui.lineHeight * 0.75
+            cy = cy - ui.lineHeight * 0.60  -- compact row height (was 0.75)
             setTextColor(unpack(ui.colors.textDim))
-            renderText(col1x,  cy + 0.006, ui.statusSize, label)
+            renderText(col1x,  cy + 0.004, ui.statusSize, label)
             setTextColor(unpack(ui.colors.text))
-            renderText(col1x + 0.040, cy + 0.006, ui.statusSize, val1)
+            renderText(col1x + 0.040, cy + 0.004, ui.statusSize, val1)
             if label2 then
                 setTextColor(unpack(ui.colors.textDim))
-                renderText(col2x,         cy + 0.006, ui.statusSize, label2)
+                renderText(col2x,         cy + 0.004, ui.statusSize, label2)
                 setTextColor(unpack(ui.colors.text))
-                renderText(col2x + 0.040, cy + 0.006, ui.statusSize, val2 or "—")
+                renderText(col2x + 0.040, cy + 0.004, ui.statusSize, val2 or "—")
             end
         end
 
-        statRow("Time:", s.time,     "Area:", s.area)
-        statRow("Load:", s.avgLoad,  "Peak:", s.peakLoad)
-        statRow("Loss:", s.avgLoss,  "Hdr:", s.avgHdrLoss)
-        statRow("Plugs:", s.plugs,   "Yield:", s.mass)
+        statRow("Time:",  s.time,         "Area:",  s.area)
+        statRow("Load:",  s.avgLoad,      "Peak:",  s.peakLoad)
+        if machineType == "forage" then
+            -- EN: Convert avg clean loss % back to Processing Score for forage display.
+            local lossNum  = tonumber((s.avgCleanLoss or "0"):match("([%d%.]+)")) or 0
+            local scoreStr = string.format("%d%%", math.max(0, math.floor(100 - lossNum + 0.5)))
+            statRow("Score:", scoreStr,   "Plugs:", s.plugs)
+        else
+            -- EN: Total loss only — use HUD / small display for Sep/Cln/Hdr breakdown.
+            statRow("Loss:",  s.avgLoss,   "Plugs:", s.plugs)
+        end
+        statRow("Yield:", s.mass,         nil,      nil)
 
         -- EN: Efficiency grade — color-coded.
-        cy = cy - ui.lineHeight * 0.80
+        cy = cy - ui.lineHeight * 0.65  -- was 0.80
         local gradeChar = s.grade:sub(1,1)
         local gr, gg, gb = 0.24, 0.72, 0.47
         if gradeChar == "B" then gr, gg, gb = 0.55, 0.80, 0.30
@@ -729,8 +742,8 @@ function CombineCalibrationGUI:draw()
         setTextBold(false)
 
         -- EN: Reset Session button.
-        cy = cy - ui.lineHeight * 0.85
-        self:drawButton(x + ui.margin, cy, w - ui.margin * 2, 0.024, "RESET SESSION", function()
+        cy = cy - ui.lineHeight * 0.75  -- was 0.85
+        self:drawButton(x + ui.margin, cy, w - ui.margin * 2, 0.020, "RESET SESSION", function()
             if spec.loadCalculator then
                 spec.loadCalculator:resetSession()
             end
@@ -741,23 +754,63 @@ function CombineCalibrationGUI:draw()
         cy = cy - ui.margin * 0.4
     end
 
+    -- ── Swath / Pickup Width override ──────────────────────────────────────
+    -- EN: When a pickup header is in use, this overrides header width for yield area calculation.
+    --     Set to the original cutting/swathing width. 0 = disabled (use actual header width).
+    -- UA: При використанні підбирача, це замінює ширину жниварки для розрахунку площі врожайності.
+    cy = cy - ui.lineHeight * 0.5
+    local unitSystem = (g_realisticHarvestManager and g_realisticHarvestManager.settings
+                       and g_realisticHarvestManager.settings.unitSystem) or 1
+    local swathM = memory.swathWidth or 0
+    local swathLabelStr
+    if swathM <= 0 then
+        swathLabelStr = "Swath Width: Auto"
+    else
+        if unitSystem == 3 or unitSystem == 2 then
+            local swathFt = swathM / 0.3048
+            swathLabelStr = string.format("Swath Width: %.0f ft", swathFt)
+        else
+            swathLabelStr = string.format("Swath Width: %.1f m", swathM)
+        end
+    end
+    setTextBold(false)
+    setTextAlignment(RenderText.ALIGN_LEFT)
+    setTextColor(unpack(ui.colors.text))
+    renderText(x + ui.margin, cy + 0.007, ui.fontSize, swathLabelStr)
+
+    -- EN: Minus button — decrease swath width.
+    local stepM = (unitSystem == 2 or unitSystem == 3) and 0.3048 or 0.5  -- 1 ft or 0.5 m
+    local swBtnW = ui.buttonW * 0.9
+    local swBtnX = x + w - ui.margin - swBtnW * 2 - 0.004
+    self:drawButton(swBtnX, cy + 0.003, swBtnW, ui.buttonH, "-", function()
+        local cur  = memory.swathWidth or 0
+        local newW = math.max(0, cur - stepM)
+        memory.swathWidth = (newW < stepM * 0.5) and nil or newW
+    end, ui.colors.button)
+    -- EN: Plus button — increase swath width.
+    self:drawButton(swBtnX + swBtnW + 0.004, cy + 0.003, swBtnW, ui.buttonH, "+", function()
+        local cur  = memory.swathWidth or 0
+        local newW = math.max(stepM, cur + stepM)
+        memory.swathWidth = math.min(newW, 50)  -- EN: cap at 50 m / ~164 ft
+    end, ui.colors.button)
+
     -- ── Action buttons ──────────────────────────────────────────────────────
     -- Row 1: Load Preset | Save Profile
     cy = cy - ui.lineHeight * 1.0
     local btnWidth = (w - ui.margin * 2.5 - 0.008) / 2
 
-    self:drawButton(x + ui.margin, cy, btnWidth, 0.026, g_i18n:getText("rhm_gui_btn_load_preset"), function()
+    self:drawButton(x + ui.margin, cy, btnWidth, 0.022, g_i18n:getText("rhm_gui_btn_load_preset"), function()
         memory:loadUserPreset()
     end, ui.colors.button)
 
-    self:drawButton(x + w - ui.margin - btnWidth, cy, btnWidth, 0.026, g_i18n:getText("rhm_gui_btn_save"), function()
+    self:drawButton(x + w - ui.margin - btnWidth, cy, btnWidth, 0.022, g_i18n:getText("rhm_gui_btn_save"), function()
         memory:saveCurrentProfile(memory.currentCrop)
     end, ui.colors.buttonSave)
 
     -- Row 2: Reset Default
     cy = cy - ui.lineHeight * 1.0
     local resetBtnW = w - ui.margin * 2
-    self:drawButton(x + ui.margin, cy, resetBtnW, 0.026, g_i18n:getText("rhm_gui_btn_reset"), function()
+    self:drawButton(x + ui.margin, cy, resetBtnW, 0.022, g_i18n:getText("rhm_gui_btn_reset"), function()
         memory:requestResetSettings()
     end, ui.colors.buttonReset)
 
@@ -838,16 +891,19 @@ function CombineCalibrationGUI:drawParameterRow(x, y, w, param, label, memory, u
     local statusW   = btnStartX - valEndX - 0.004
 
     -- EN: Determine value color and status text based on optimality.
-    --     Status hints (color coding + text) require Settings Monitoring upgrade (tier 2+).
-    --     Below tier 2, values always render in neutral white with no hint text.
-    -- UA: Визначаємо колір значення та текст статусу на основі оптимальності.
-    --     Підказки статусу (кольорове кодування + текст) потребують апгрейду Моніторинг (рівень 2+).
+    --     Hints (optimal/v high/^ low) require Level 2 — Settings Monitoring.
+    --     Below level 2 the value is shown but no quality feedback is given.
+    -- UA: Підказки (optimal/v high/^ low) потребують рівня 2 — Моніторинг налаштувань.
     local valColor, statusText, statusColor
-    local hintsUnlocked = (memory.upgradeLevel or 0) >= 2
+    local hintsUnlocked = (memory and (memory.upgradeLevel or 0) >= 2)
 
-    if memory.autoSwitchEnabled then
+    if memory.autoSwitchEnabled and param ~= "targetEngineLoad" then
         valColor    = ui.colors.textDim
         statusText  = "auto"
+        statusColor = ui.colors.textDim
+    elseif param == "targetEngineLoad" then
+        valColor    = ui.colors.text
+        statusText  = ""
         statusColor = ui.colors.textDim
     elseif not hasOptimal or not hintsUnlocked then
         valColor    = ui.colors.text
@@ -887,19 +943,19 @@ function CombineCalibrationGUI:drawParameterRow(x, y, w, param, label, memory, u
     setTextBold(true)
     setTextAlignment(RenderText.ALIGN_LEFT)
     setTextColor(unpack(ui.colors.textDim))
-    renderText(x, y + 0.014, ui.fontSize, label)
+    renderText(x, y + 0.010, ui.fontSize, label)
 
     -- ── Value ──────────────────────────────────────────────────────────────
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextColor(unpack(valColor))
-    renderText(valX + valW / 2, y + 0.014, ui.fontSize, displayStr)
+    renderText(valX + valW / 2, y + 0.010, ui.fontSize, displayStr)
 
     -- ── Status hint ────────────────────────────────────────────────────────
     if statusText ~= "" and statusW > 0.008 then
         setTextBold(false)
         setTextAlignment(RenderText.ALIGN_LEFT)
         setTextColor(unpack(statusColor))
-        renderText(valEndX + 0.002, y + 0.014, ui.statusSize, statusText)
+        renderText(valEndX + 0.002, y + 0.010, ui.statusSize, statusText)
     end
 
     -- ── Progress bar ───────────────────────────────────────────────────────
@@ -907,7 +963,7 @@ function CombineCalibrationGUI:drawParameterRow(x, y, w, param, label, memory, u
     --     White marker pin at the optimal % position.
     -- UA: Бар від початку колонки значень до кнопок. Показує позицію поточного % значення.
     --     Білий маркер на позиції оптимального % значення.
-    if hasOptimal then
+    if hasOptimal or param == "targetEngineLoad" then
         local barX = valX
         local barW = btnStartX - valX - 0.004
         local barY = y + 0.005
@@ -921,7 +977,14 @@ function CombineCalibrationGUI:drawParameterRow(x, y, w, param, label, memory, u
         -- UA: Заповнення бару (поточне значення). Кольорове кодування лише з рівнем 2+.
         local fillPct = math.max(0, math.min(val / 100.0, 1.0))
         local fillColor
-        if not hintsUnlocked then
+        if param == "targetEngineLoad" then
+            -- EN: Maps 70–110% range across the bar. Green ≤95, yellow 95–100, red >100.
+            -- UA: Відображає діапазон 70–110% на барі. Зелений ≤95, жовтий 95–100, червоний >100.
+            fillPct = math.max(0, math.min((val - 70) / 40.0, 1.0))
+            fillColor = ui.colors.success
+            if val > 100 then fillColor = ui.colors.error
+            elseif val > 95 then fillColor = ui.colors.warning end
+        elseif not hintsUnlocked then
             fillColor = ui.colors.textDim
         else
             fillColor = isOptimal and ui.colors.success
