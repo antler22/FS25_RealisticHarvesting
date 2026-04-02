@@ -257,6 +257,24 @@ end
 -- EN: Cleans up all HUD and GUI resources on mission end.
 -- UA: Очищає всі ресурси HUD і GUI при завершенні місії.
 function RealisticHarvestManager:delete()
+    -- EN: Flush the current crop's settings for every loaded combine before teardown.
+    --     switchCrop() only saves when the crop *changes*, so a single-crop session or a
+    --     session where the player exits mid-field would lose all manual adjustments without this.
+    -- UA: Зберігаємо поточні налаштування кожного комбайна перед завершенням.
+    --     switchCrop() зберігає тільки при зміні культури, тому без цього manual-зміни
+    --     за сесію з однією культурою або при виході з поля будуть втрачені.
+    if self.profileManager and g_currentMission and g_currentMission.vehicles then
+        for _, vehicle in pairs(g_currentMission.vehicles) do
+            local spec = vehicle.spec_rhm_Combine
+            if spec and spec.combineMemory then
+                local mem = spec.combineMemory
+                if mem.currentCrop and mem.currentSettings then
+                    self.profileManager:saveProfile(mem.currentCrop, mem.currentSettings)
+                end
+            end
+        end
+    end
+
     if self.hud then
         self.hud:delete()
         self.hud = nil

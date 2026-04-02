@@ -11,6 +11,23 @@ local ProfileManager_mt = Class(ProfileManager)
 -- UA: Шлях кореневого тегу XML, що використовується у файлі профілів.
 ProfileManager.XMLTAG = "realisticHarvestingProfiles.profiles"
 
+-- EN: Complete list of all possible params across all machine types.
+--     Used when reading profiles from XML — we try each name and only store it if present.
+--     Add new params here when CombineSettingsDatabase.machineParams is extended.
+-- UA: Повний список можливих параметрів для всіх типів машин.
+ProfileManager.ALL_PARAMS = {
+    -- grain
+    "rotor", "concave", "upperSieve", "lowerSieve", "fan",
+    -- forage
+    "chopLength", "kernelProcessor", "acceleratorGap",
+    -- root
+    "shakingIntensity",
+    -- shared (root/cotton legacy)
+    "feeder",
+    -- universal
+    "targetEngineLoad",
+}
+
 -- EN: Creates a new ProfileManager instance with an empty profiles table.
 -- UA: Створює новий екземпляр ProfileManager з порожньою таблицею профілів.
 function ProfileManager.new()
@@ -68,14 +85,28 @@ function ProfileManager:loadProfiles()
             -- UA: Зчитуємо кожен запис профілю за назвою культури.
             local cropName = xml:getString(key .. "#cropName")
             if cropName then
-                self.profiles[cropName] = {
-                    fan = xml:getInt(key .. "#fan", 50),
-                    rotor = xml:getInt(key .. "#rotor", 50),
-                    upperSieve = xml:getInt(key .. "#upperSieve", 50),
-                    lowerSieve = xml:getInt(key .. "#lowerSieve", 50),
-                    feeder = xml:getInt(key .. "#feeder", 50),
-                    targetEngineLoad = xml:getInt(key .. "#targetEngineLoad", 95)
-                }
+                -- EN: Read all known params dynamically. Only store params that were
+                --     actually written (non-nil), so old grain-only saves still load
+                --     correctly without polluting forage/root entries with 50% defaults.
+                -- UA: Зчитуємо всі відомі параметри динамічно. Зберігаємо тільки ті,
+                --     що були реально записані, щоб старі зернові збереження
+                --     не забруднювали форажні/коренеплодні значеннями 50%.
+                local profile = {}
+                for _, pName in ipairs(ProfileManager.ALL_PARAMS) do
+                    local sentinel = (pName == "targetEngineLoad") and 9999 or -1
+                    local v = xml:getInt(key .. "#" .. pName, sentinel)
+                    if v ~= sentinel then
+                        profile[pName] = v
+                    end
+                end
+                -- EN: Legacy compat: old saves wrote "feeder" for what is now "concave" on grain machines.
+                -- UA: Зворотна сумісність: старі збереження писали "feeder" замість "concave".
+                if profile.feeder and not profile.concave then
+                    profile.concave = profile.feeder
+                end
+                -- EN: Ensure targetEngineLoad always has a sane default.
+                if not profile.targetEngineLoad then profile.targetEngineLoad = 95 end
+                self.profiles[cropName] = profile
             end
             i = i + 1
         end
@@ -100,12 +131,13 @@ function ProfileManager:saveProfiles()
         for cropName, settings in pairs(self.profiles) do
             local key = string.format("%s.profile(%d)", self.XMLTAG, i)
             xml:setString(key .. "#cropName", cropName)
-            xml:setInt(key .. "#fan", settings.fan or 50)
-            xml:setInt(key .. "#rotor", settings.rotor or 50)
-            xml:setInt(key .. "#upperSieve", settings.upperSieve or 50)
-            xml:setInt(key .. "#lowerSieve", settings.lowerSieve or 50)
-            xml:setInt(key .. "#feeder", settings.feeder or 50)
-            xml:setInt(key .. "#targetEngineLoad", settings.targetEngineLoad or 95)
+            -- EN: Write all params that are present in this profile (dynamic — no hardcoded list).
+            -- UA: Записуємо всі параметри що є в профілі (динамічно — без жорсткого списку).
+            for k, v in pairs(settings) do
+                if type(v) == "number" then
+                    xml:setInt(key .. "#" .. k, v)
+                end
+            end
             i = i + 1
         end
         xml:save()
@@ -130,14 +162,16 @@ end
 function ProfileManager:saveProfile(cropName, settings)
     if not cropName or not settings then return false end
 
-    self.profiles[cropName] = {
-        fan = settings.fan or 50,
-        rotor = settings.rotor or 50,
-        upperSieve = settings.upperSieve or 50,
-        lowerSieve = settings.lowerSieve or 50,
-        feeder = settings.feeder or 50,
-        targetEngineLoad = settings.targetEngineLoad or 95
-    }
+    -- EN: Store all numeric settings keys — no hardcoded list, works for grain/forage/root/cotton.
+    -- UA: Зберігаємо всі числові ключі налаштувань — без жорсткого списку, для всіх типів машин.
+    local saved = {}
+    for k, v in pairs(settings) do
+        if type(v) == "number" then
+            saved[k] = v
+        end
+    end
+    if not saved.targetEngineLoad then saved.targetEngineLoad = 95 end
+    self.profiles[cropName] = saved
 
     self:saveProfiles()
     return true

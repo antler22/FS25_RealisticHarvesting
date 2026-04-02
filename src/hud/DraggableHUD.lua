@@ -579,8 +579,10 @@ function DraggableHUD:updateSize()
         end
     end
 
-    -- EN: Moisture indicator — always shown when conditions are non-optimal.
+    -- EN: Plant moisture indicator (time-of-day) — shown when conditions are non-optimal.
     if (self.data.moistureLabel or "") ~= "" then rowCount = rowCount + 1 end
+    -- EN: Grain moisture indicator — shown when 'Moisture System' mod is active.
+    if self.settings.showMoisture and MoistureAdapter and MoistureAdapter.isActive then rowCount = rowCount + 1 end
     -- EN: Plug warning — always visible when plugged (critical safety info).
     if self.data.isPlugged then rowCount = rowCount + 1 end
     if self.settings.showSpeed then rowCount = rowCount + 1 end
