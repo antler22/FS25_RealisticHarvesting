@@ -58,9 +58,17 @@ function LoadCalculator.new(modDirectory)
 
     -- EN: Time-of-day moisture factor (cached every 60s to avoid per-tick env queries).
     -- UA: Коефіцієнт вологості часу доби (кешується кожні 60с для уникнення запитів оточення кожен тік).
-    self.moistureFactor = 1.0
-    self.moistureLabel = ""   -- EN: Short label for HUD display / UA: Коротка мітка для HUD
-    self._moistureUpdateTimer = 0
+    self.moistureFactor  = 1.0
+    self.moistureLabel   = ""     -- EN: Short label for HUD display / UA: Коротка мітка для HUD
+    self.moisturePercent = 13.0   -- EN: Realistic grain moisture % (always computed from time of day,
+                                  --     independent of tech tier). Maps Optimal→~13%, Night Dew→~24%,
+                                  --     Morning/Evening Dew linearly between. Always shown on HUD so
+                                  --     the player always has a number — like real-life combines.
+                                  -- UA: Реалістична вологість зерна у % (завжди обчислюється з часу доби,
+                                  --     незалежно від рівня апгрейду). Оптимум→~13%, нічна роса→~24%.
+    -- EN: Start timer at 60s so the first updateMoistureFactor call fires immediately (on the first tick).
+    -- UA: Починаємо таймер на 60с щоб перший виклик updateMoistureFactor спрацював одразу (на першому тіку).
+    self._moistureUpdateTimer = 60000
 
     -- EN: Session statistics — reset by the player via the Harvest Report panel.
     -- UA: Статистика сесії — скидається гравцем через панель звіту про збирання.
@@ -198,6 +206,65 @@ function LoadCalculator:loadDefaultCropFactors()
             end
         end
     end
+
+    -- EN: High-priority string-name lookup table. Values here override the FruitType/FillType
+    --     enum lookups in calculateEngineLoad, correcting crops where the enum integer mapping
+    --     is unreliable (mod crops, windrows, or crops with distinct forage vs grain behaviour).
+    --     Key corrections vs the enum map:
+    --       OAT        — 0.680 (lighter than wheat in practice, enum map had 1.164)
+    --       MAIZE_FORAGE — 0.300 (green silage corn is far easier for forage harvesters)
+    --       GRASS_WINDROW / DRYGRASS_WINDROW — explicit entries the _WINDROW suffix strip misses
+    -- UA: Таблиця пріоритетного пошуку за іменем культури. Значення тут мають пріоритет над
+    --     enum-пошуком, виправляючи культури з ненадійними enum-ID або форажними відмінностями.
+    self.CROP_FACTORS_BY_NAME = {
+        ["WHEAT"]             = 0.814,
+        ["BARLEY"]            = 0.869,
+        ["OAT"]               = 0.900,  -- EN: Light-stemmed but bulky; roughly on par with wheat
+        ["MAIZE"]             = 0.572,
+        ["CORN"]              = 0.572,
+        ["MAIZE_FORAGE"]      = 0.300,
+        ["MAIZE_SILAGE"]      = 0.572,
+        ["SOYBEAN"]           = 1.788,
+        ["SUNFLOWER"]         = 2.324,
+        ["CANOLA"]            = 1.738,
+        ["SORGHUM"]           = 0.801,
+        ["RICE"]              = 1.303,
+        ["RICE_LONG_GRAIN"]   = 1.303,
+        ["PEA"]               = 1.152,
+        ["LENTIL"]            = 1.152,
+        ["CHICKPEA"]          = 1.152,
+        ["GREENBEAN"]         = 2.240,
+        ["POTATO"]            = 0.600,
+        ["SUGARBEET"]         = 0.920,
+        ["BEETROOT"]          = 1.050,
+        ["CARROT"]            = 0.323,
+        ["PARSNIP"]           = 0.400,
+        ["ONION"]             = 0.600,
+        ["SPINACH"]           = 2.880,
+        ["GRASS"]             = 1.221,
+        ["DRYGRASS"]          = 1.100,
+        ["ALFALFA"]           = 1.100,
+        ["CLOVER"]            = 1.100,
+        ["MEADOW"]            = 1.221,
+        ["ONION_DIRTY"]       = 0.700,
+        ["COTTON"]            = 4.782,
+        ["SUGARCANE"]         = 0.654,
+        ["POPLAR"]            = 0.156,
+        ["OILSEED_RADISH"]    = 0.391,
+        ["GRAPE"]             = 0.391,
+        ["OLIVE"]             = 0.391,
+        ["RYE"]               = 0.814,
+        ["SPELT"]             = 0.814,
+        ["TRITICALE"]         = 0.461,
+        ["MILLET"]            = 0.976,
+        ["MINT"]              = 1.054,
+        -- EN: GRASS_WINDROW and DRYGRASS_WINDROW are intentionally absent here.
+        --     The enum mapping loop strips the _WINDROW suffix and maps them to their base crop
+        --     factor (GRASS=1.221, DRYGRASS=1.100), and then the 0.75 pickup multiplier is applied
+        --     in calculateEngineLoad — giving effective factors of ~0.916 and ~0.825 respectively.
+        --     That result is already realistic for pre-cut dried windrow material and doesn't
+        --     need a separate BY_NAME entry.
+    }
 end
 
 ---EN: Sets base performance mass / UA: Встановлює базову продуктивність (маса)
@@ -424,8 +491,9 @@ function LoadCalculator:updateMoistureFactor(dt)
     self._moistureUpdateTimer = 0
 
     if not g_currentMission or not g_currentMission.environment then
-        self.moistureFactor = 1.0
-        self.moistureLabel  = ""
+        self.moistureFactor  = 1.0
+        self.moistureLabel   = ""
+        self.moisturePercent = 13.0  -- EN: Safe default at optimal.
         return
     end
 
@@ -435,35 +503,54 @@ function LoadCalculator:updateMoistureFactor(dt)
     local dayTime = g_currentMission.environment.dayTime or 0
     local hour    = dayTime / 3600000  -- EN: Fractional hours 0.0–24.0 / UA: Дробові години 0.0–24.0
 
-    local factor, label
+    -- EN: Realistic grain-moisture anchor points (based on typical cereal harvest conditions):
+    --       Optimal window (9 am – 7 pm) ≈ 13.0 %
+    --       Full night dew                ≈ 24.0 %
+    --     Morning/evening transitions linearly between these anchors.
+    -- UA: Реалістичні опорні значення вологості зерна:
+    --       Оптимальне вікно (9:00–19:00) ≈ 13.0 %
+    --       Повна нічна роса              ≈ 24.0 %
+    local MOISTURE_OPTIMAL = 13.0
+    local MOISTURE_NIGHT   = 24.0
+
+    local factor, label, percent
 
     if hour < 6.0 then
         -- EN: 00:00–06:00 — full night penalty / UA: 00:00–06:00 — повний нічний штраф
-        factor = 2.0
-        label  = "Night Dew"
+        factor  = 2.0
+        label   = "Night Dew"
+        percent = MOISTURE_NIGHT
 
     elseif hour < 9.0 then
         -- EN: 06:00–09:00 — dew burning off, linear taper 2.0 → 1.0
         -- UA: 06:00–09:00 — роса висихає, лінійне зменшення 2.0 → 1.0
         local t = (hour - 6.0) / 3.0  -- EN: 0.0 at 6am, 1.0 at 9am
-        factor = 2.0 - t              -- EN: 2.0 → 1.0
-        label  = "Morning Dew"
+        factor  = 2.0 - t             -- EN: 2.0 → 1.0
+        label   = "Morning Dew"
+        percent = MOISTURE_NIGHT - (MOISTURE_NIGHT - MOISTURE_OPTIMAL) * t  -- EN: 24 → 13
 
     elseif hour < 19.0 then
-        -- EN: 09:00–19:00 — optimal harvest window / UA: 09:00–19:00 — оптимальне вікно збирання
-        factor = 1.0
-        label  = ""
+        -- EN: 09:00–19:00 — optimal harvest window. Show "Optimal" so the HUD row is always visible.
+        -- UA: 09:00–19:00 — оптимальне вікно збирання. "Optimal" щоб рядок HUD завжди відображався.
+        factor  = 1.0
+        label   = "Optimal"
+        percent = MOISTURE_OPTIMAL
 
     else
         -- EN: 19:00–24:00 — evening dew building, linear rise 1.0 → 2.0
         -- UA: 19:00–24:00 — вечірня роса, лінійне зростання 1.0 → 2.0
         local t = (hour - 19.0) / 5.0  -- EN: 0.0 at 7pm, 1.0 at midnight
-        factor = 1.0 + t               -- EN: 1.0 → 2.0
-        label  = "Evening Dew"
+        factor  = 1.0 + t              -- EN: 1.0 → 2.0
+        label   = "Evening Dew"
+        percent = MOISTURE_OPTIMAL + (MOISTURE_NIGHT - MOISTURE_OPTIMAL) * t  -- EN: 13 → 24
     end
 
-    self.moistureFactor = factor
-    self.moistureLabel  = label
+    self.moistureFactor  = factor
+    self.moistureLabel   = label
+    self.moisturePercent = percent
+
+    print(string.format("RHM: [MOISTURE] hour=%.2f | label=%s | factor=%.2f | percent=%.1f%%",
+        hour, label, factor, percent))
 end
 
 -- ============================================================================
@@ -822,9 +909,32 @@ function LoadCalculator:calculateEngineLoad(vehicle)
             currentFruitTypeName = string.upper(fillTypeDesc.name)
         end
     end
+    -- EN: String-name override — takes priority over FruitType/FillType enum lookups.
+    --     Applied after the name is resolved so mod crops with non-standard enum IDs still
+    --     get the correct factor. Skipped for forage machines (cropFactor is forced to 1.0
+    --     further below; CROP_FACTORS_BY_NAME has no effect on them anyway).
+    -- UA: Перевизначення за іменем — пріоритет над enum-пошуком. Пропускається для
+    --     форажних машин (cropFactor скидається в 1.0 нижче).
+    if not isForageMachine and currentFruitTypeName ~= "UNKNOWN" then
+        local nameOverride = self.CROP_FACTORS_BY_NAME and self.CROP_FACTORS_BY_NAME[currentFruitTypeName]
+        if nameOverride then
+            cropFactor = nameOverride
+        end
+    end
+
+    -- EN: CropFactorTuning hook — dev-only live override (no-op when ENABLED=false).
+    --     Takes highest priority so tuned values are immediately reflected in engine load.
+    -- UA: Хук CropFactorTuning — перевизначення в режимі розробника (no-op якщо ENABLED=false).
+    if not isForageMachine and CropFactorTuning and CropFactorTuning.isEnabled() then
+        local tuneOverride = CropFactorTuning.getFactorOverride(currentFruitTypeName)
+        if tuneOverride then
+            cropFactor = tuneOverride
+        end
+    end
+
     local isPickup = false
     local isForageCutter = false
-    
+
     -- EN: ROBUST DETECTION (Check attached implements) / UA: НАДІЙНА ДЕТЕКЦІЯ
     if vehicle.getAttachedImplements then
         for _, implement in pairs(vehicle:getAttachedImplements()) do
@@ -943,20 +1053,16 @@ function LoadCalculator:calculateEngineLoad(vehicle)
         print(string.format("RHM DEBUG: [INPUT] %s (%s). Final Factor: %.3f", mode, currentFruitTypeName, cropFactor))
     end
     
-    -- EN: Grain moisture penalty — reads field-level grain moisture % from the external 'Moisture System' mod.
-    --     Above 14% moisture limit: each extra 1% adds 2% more effective load (crop is harder to thresh).
+    -- EN: Grain moisture load factor — sourced from MoistureCalculator via the cached value
+    --     set in rhm_Combine:onUpdateTick() (self.moistureLoadFactor).
     --     Forage and root-crop machines are exempt — they don't separate grain at harvest.
     --     Stacks multiplicatively with the time-of-day plant moisture factor (self.moistureFactor).
-    -- UA: Штраф за вологість зерна — читає вологість з зовнішнього моду 'Moisture System'.
-    --     Понад 14% ліміту: кожен 1% понад норму додає 2% ефективного навантаження.
+    -- UA: Коефіцієнт навантаження від вологості зерна — з MoistureCalculator через кешоване значення.
+    --     Форажні та коренеплодні машини звільнені — вони не сепарують зерно.
     local grainMoistureFactor = 1.0
     local machineTypeForMoisture = self.combineMemory and self.combineMemory.machineType or "grain"
     if machineTypeForMoisture ~= "forage" and machineTypeForMoisture ~= "root" then
-        local rhmSpec = vehicle.spec_rhm_Combine
-        local gm = rhmSpec and rhmSpec.data and rhmSpec.data.grainMoisture or 0
-        if gm > 14 then
-            grainMoistureFactor = 1.0 + (gm - 14) * 0.02
-        end
+        grainMoistureFactor = self.moistureLoadFactor or 1.0
     end
 
     -- EN: Calculate RAW average mass intake per second / UA: Розраховуємо RAW середню масу за секунду (кг/с)
@@ -1049,10 +1155,17 @@ function LoadCalculator:calculateSpeedLimit(vehicle)
     -- EN: Clamp speed within safe bounds. Only apply genuineSpeedLimit ceiling when it has been
     --     initialized (> 0). When genuineSpeedLimit = -1 (not yet set), using math.min(-1, x)
     --     would instantly pin speedLimit to the 2 km/h floor — avoid that race condition.
+    --     Moisture speed factor provides an INDEPENDENT ceiling reduction on top of the
+    --     load-driven reduction: wet standing crop increases resistance at the header/reel
+    --     regardless of how hard the engine is working. Only applied for grain machines.
     -- UA: Обмежуємо швидкість. Стелю genuineSpeedLimit застосовуємо лише коли він встановлений (>0).
-    --     Якщо genuineSpeedLimit = -1 (ще не встановлений), math.min(-1, x) миттєво зіпхне
-    --     speedLimit до мінімуму 2 км/год — уникаємо цього перегону стану.
+    --     Коефіцієнт швидкості вологості — незалежне зменшення стелі окрім навантаження двигуна.
     local gslCap = self.genuineSpeedLimit > 0 and self.genuineSpeedLimit or math.huge
+    local machineTypeForSpeed = self.combineMemory and self.combineMemory.machineType or "grain"
+    if machineTypeForSpeed ~= "forage" and machineTypeForSpeed ~= "root" then
+        local speedFactor = self.moistureSpeedFactor or 1.0
+        gslCap = gslCap * speedFactor
+    end
     self.speedLimit = math.max(2.0, math.min(gslCap, self.speedLimit))
 end
 
@@ -1092,15 +1205,17 @@ function LoadCalculator:reset()
     self.tonPerHour = 0
     self.litersPerHour = 0
     
-    self.prodBuffer = {}
+    self.prodBuffer     = {}
     self.prodStartIndex = 1
-    self.prodEndIndex = 0
+    self.prodEndIndex   = 0
+    self.prodSumTime    = 0
     self.currentBufferTime = 0
-    
-    self.yieldBuffer = {}
+
+    self.yieldBuffer     = {}
     self.yieldStartIndex = 1
-    self.yieldEndIndex = 0
-    
+    self.yieldEndIndex   = 0
+    self.yieldSumTime    = 0
+
     self.currentYield = 0
     self.instantYield = 0
 end
@@ -1222,8 +1337,21 @@ function LoadCalculator:calculateTotalCropLoss()
     local rawThr   = self.rawThrSettingsLoss   or 0
     local rawClean = self.rawCleanSettingsLoss or 0
 
-    local thrLoss   = math.min(baseLoss + rawThr   * loadScale * lossMultiplier, 50)
-    local cleanLoss = math.min(           rawClean * loadScale * lossMultiplier, 50)
+    -- EN: Moisture loss factor — wet crop doesn't separate cleanly through sieves/rotor.
+    --     Applied only to the settings-deviation penalties (rawThr/rawClean), NOT to the base
+    --     overload loss — overload loss is already captured by the higher engine load that wet
+    --     crop causes through moistureLoadFactor, so applying it again here would double-count.
+    --     Forage and root machines are excluded (no sieve separation mechanic).
+    -- UA: Коефіцієнт втрат від вологості — вологе зерно погано проходить через решета/ротор.
+    --     Застосовується лише до штрафів налаштувань, не до базових втрат від перевантаження.
+    local moistLossMult = 1.0
+    local machineTypeForLoss = self.combineMemory and self.combineMemory.machineType or "grain"
+    if machineTypeForLoss ~= "forage" and machineTypeForLoss ~= "root" then
+        moistLossMult = self.moistureLossFactor or 1.0
+    end
+
+    local thrLoss   = math.min(baseLoss + rawThr   * loadScale * lossMultiplier * moistLossMult, 50)
+    local cleanLoss = math.min(           rawClean * loadScale * lossMultiplier * moistLossMult, 50)
     local totalLoss = math.min(thrLoss + cleanLoss, 50)
 
     self.thrLoss   = thrLoss
@@ -1249,64 +1377,66 @@ function LoadCalculator:getLitersPerHour()
     return self.litersPerHour or 0
 end
 
----EN: Updates sliding window rolling averages for metric evaluations / UA: Оновлює ковзні середні продуктивності
+---EN: Updates sliding window rolling averages for metric evaluations.
+---     Time-based 2.5-second window — tick-count windows break because onUpdateTick
+---     fires at variable rates (20-60+ Hz), not the assumed 3 Hz.
+--- UA: Оновлює ковзні середні продуктивності. Вікно на основі часу (2.5 с) — кількісні вікна
+---     ламаються бо onUpdateTick викликається з різною частотою (20-60+ Гц), а не 3 Гц.
+local PROD_WINDOW_MS = 2500  -- EN: 2.5-second rolling window / UA: Ковзне вікно 2.5 секунди
+
 function LoadCalculator:updateProductivity(mass, liters, dt)
     self.totalOutputMass = self.totalOutputMass + mass
-    
-    self.prodBuffer = self.prodBuffer or {}
+
+    self.prodBuffer     = self.prodBuffer     or {}
     self.prodStartIndex = self.prodStartIndex or 1
-    self.prodEndIndex = self.prodEndIndex or 0
-    
+    self.prodEndIndex   = self.prodEndIndex   or 0
+    self.prodSumTime    = self.prodSumTime    or 0
+
     self.prodEndIndex = self.prodEndIndex + 1
     self.prodBuffer[self.prodEndIndex] = {m = mass, l = liters or 0, t = dt}
-    
-    self.currentBufferTime = (self.currentBufferTime or 0) + dt
-    while (self.prodEndIndex - self.prodStartIndex + 1) > 1 and self.currentBufferTime > 12000 do
-        local old = self.prodBuffer[self.prodStartIndex]
-        self.currentBufferTime = self.currentBufferTime - old.t
-        self.prodBuffer[self.prodStartIndex] = nil -- free memory
+    self.prodSumTime = self.prodSumTime + dt
+
+    -- EN: Trim oldest samples until the buffer fits within PROD_WINDOW_MS.
+    --     Keep at least one sample so the buffer is never empty.
+    -- UA: Видаляємо найстаріші семпли поки вікно не вкладається в PROD_WINDOW_MS.
+    while self.prodSumTime > PROD_WINDOW_MS and (self.prodEndIndex - self.prodStartIndex) >= 1 do
+        self.prodSumTime = self.prodSumTime - self.prodBuffer[self.prodStartIndex].t
+        self.prodBuffer[self.prodStartIndex] = nil
         self.prodStartIndex = self.prodStartIndex + 1
     end
-    
-    local sumMass = 0
+
+    local sumMass   = 0
     local sumLiters = 0
-    local sumTime = 0
+    local sumTime   = 0
     for i = self.prodStartIndex, self.prodEndIndex do
         local v = self.prodBuffer[i]
-        sumMass = sumMass + v.m
+        sumMass   = sumMass   + v.m
         sumLiters = sumLiters + v.l
-        sumTime = sumTime + v.t
+        sumTime   = sumTime   + v.t
     end
-    
+
     if sumTime > 100 then
         local hours = sumTime / 3600000
-        local rawTonPerHour = (sumMass / 1000) / hours
+        self.tonPerHour    = (sumMass / 1000) / hours
         self.litersPerHour = sumLiters / hours
-        local alpha = 0.05
-        if self.tonPerHour == 0 then self.tonPerHour = rawTonPerHour end
-        self.tonPerHour = self.tonPerHour * (1 - alpha) + rawTonPerHour * alpha
     else
-        self.tonPerHour = 0
+        self.tonPerHour    = 0
         self.litersPerHour = 0
     end
 end
 
 ---EN: Processes complete physical output block calculations / UA: Виконує розрахунки врожайності
--- EN: Yield is a SHORT rolling window (~2-3 seconds of recent ticks, not a field average).
---     This gives a real-time snapshot — like a combine monitor that shows what the machine
---     is seeing right now. The operator accepts the natural ±variance from short samples,
---     just as on a real cab display.
---
---     Window: YIELD_WINDOW_SAMPLES ticks (onUpdateTick fires ~3×/sec in FS25 → ~2.5 sec).
+-- EN: Yield is a SHORT rolling window (~2.5 seconds), not a field average.
+--     Time-based, not count-based — onUpdateTick fires at variable rates (20-60+ Hz in FS25),
+--     so a fixed sample count would produce a window far shorter than intended.
 --     Formula: rawYield = (sumMass_kg / sumArea_m²) × 10  →  t/ha
---     Noise: ±5% random applied at HUD display time (in DraggableHUD) — not stored here.
+--     Noise: ±5% random applied at HUD display time (DraggableHUD) — not stored here.
 --
 --     Startup guard: require sumArea > YIELD_MIN_AREA_M2 before publishing any reading.
---     This prevents a huge spike on the very first tick when accumulated mass is non-zero
---     but the distance-based area estimate has barely started (area ≈ 0 → ratio → ∞).
--- UA: Короткий ковзний вікно (~2-3 сек). rawYield = (sumMass/sumArea)*10 → т/га.
-local YIELD_WINDOW_SAMPLES = 8    -- EN: ~2.5 sec at 3 Hz / UA: ~2.5 с при 3 Гц
-local YIELD_MIN_AREA_M2    = 8    -- EN: ~3m width × 2-3m travel before first reading
+--     This prevents a ÷0 or spike on the very first samples before enough area accumulates.
+-- UA: Короткий ковзний вікно (~2.5 с) на основі часу. rawYield = (sumMass/sumArea)*10 → т/га.
+local YIELD_WINDOW_MS   = 2500  -- EN: 2.5-second rolling window / UA: Ковзне вікно 2.5 секунди
+local YIELD_MIN_AREA_M2 = 2     -- EN: ~2 m² before first reading (reached in <1 tick at typical speed)
 
 function LoadCalculator:updateProductivityAndYield(mass, liters, area, dt)
     self:updateProductivity(mass, liters, dt)
@@ -1315,16 +1445,20 @@ function LoadCalculator:updateProductivityAndYield(mass, liters, area, dt)
         return
     end
 
-    self.yieldBuffer      = self.yieldBuffer      or {}
-    self.yieldStartIndex  = self.yieldStartIndex  or 1
-    self.yieldEndIndex    = self.yieldEndIndex    or 0
+    self.yieldBuffer     = self.yieldBuffer     or {}
+    self.yieldStartIndex = self.yieldStartIndex or 1
+    self.yieldEndIndex   = self.yieldEndIndex   or 0
+    self.yieldSumTime    = self.yieldSumTime    or 0
 
     self.yieldEndIndex = self.yieldEndIndex + 1
-    self.yieldBuffer[self.yieldEndIndex] = {m = mass, a = area}
+    self.yieldBuffer[self.yieldEndIndex] = {m = mass, a = area, t = dt}
+    self.yieldSumTime = self.yieldSumTime + dt
 
-    -- EN: Trim to short window — discard samples older than YIELD_WINDOW_SAMPLES ticks.
-    -- UA: Обрізаємо до короткого вікна.
-    while (self.yieldEndIndex - self.yieldStartIndex + 1) > YIELD_WINDOW_SAMPLES do
+    -- EN: Trim oldest samples until the buffer fits within YIELD_WINDOW_MS.
+    --     Keep at least one sample so the buffer is never empty.
+    -- UA: Видаляємо найстаріші семпли поки вікно не вкладається в YIELD_WINDOW_MS.
+    while self.yieldSumTime > YIELD_WINDOW_MS and (self.yieldEndIndex - self.yieldStartIndex) >= 1 do
+        self.yieldSumTime = self.yieldSumTime - self.yieldBuffer[self.yieldStartIndex].t
         self.yieldBuffer[self.yieldStartIndex] = nil
         self.yieldStartIndex = self.yieldStartIndex + 1
     end
@@ -1338,8 +1472,8 @@ function LoadCalculator:updateProductivityAndYield(mass, liters, area, dt)
     end
 
     -- EN: Require a meaningful area sample before publishing — guards against the
-    --     first-tick spike where mass > 0 but distance-based area is near zero.
-    -- UA: Вимагаємо достатньої площі перш ніж публікувати — захист від першого тіку.
+    --     first-sample spike where mass > 0 but distance-based area is near zero.
+    -- UA: Вимагаємо достатньої площі перш ніж публікувати — захист від першого семплу.
     if sumArea >= YIELD_MIN_AREA_M2 then
         self.currentYield = (sumMass / sumArea) * 10
     end
@@ -1367,15 +1501,27 @@ function LoadCalculator:setRealTimeYield(yieldTha)
 end
 
 ---EN: Returns formatted yield string / UA: Отримує форматований рядок врожайності
-function LoadCalculator:getYieldText(unitSystem)
+-- EN: NOTE — the HUD uses UnitConverter.convertYield() directly and does NOT call this function.
+--     getYieldText is kept for backwards compatibility with any external callers.
+-- UA: УВАГА — HUD використовує UnitConverter.convertYield() напряму і НЕ викликає цю функцію.
+function LoadCalculator:getYieldText(unitSystem, fruitType)
     local yield = self.currentYield or 0
     if yield < 0.1 then return "0.0", "t/ha" end
-    
-    if unitSystem == 2 then 
-        return string.format("%.2f", yield * 0.446), "t/ac"
-    elseif unitSystem == 3 then 
-        return string.format("%.0f", yield * 15), "bu/ac"
-    else 
-        return string.format("%.1f", yield), "t/ha"
+
+    if UnitConverter then
+        local val, suffix = UnitConverter.convertYield(yield, unitSystem, fruitType)
+        if unitSystem == 2 then
+            return string.format("%.2f", val), suffix
+        elseif unitSystem == 3 then
+            return string.format("%.0f", val), suffix
+        end
     end
+    -- EN: Fallback when UnitConverter is unavailable.
+    -- UA: Резервний варіант коли UnitConverter недоступний.
+    if unitSystem == 2 then
+        return string.format("%.2f", yield / 2.47105), "t/ac"
+    elseif unitSystem == 3 then
+        return string.format("%.0f", yield / 2.47105 * 36.76), "bu/ac"
+    end
+    return string.format("%.1f", yield), "t/ha"
 end

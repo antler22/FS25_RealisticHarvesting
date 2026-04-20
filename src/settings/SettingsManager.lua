@@ -44,17 +44,31 @@ SettingsManager.CLIENT_SETTINGS = {
     "showSpeedometer"
 }
 
--- EN: Default configuration values used as fallback when no saved file exists.
--- UA: Значення конфігурації за замовчуванням, що використовуються якщо збережений файл відсутній.
+-- EN: Default configuration values used as fallback when no saved file exists OR when a
+--     specific key is missing from the XML. Every key in SERVER_SETTINGS / CLIENT_SETTINGS
+--     MUST have an entry here — otherwise xml:getBool/getInt falls back to nil and clobbers
+--     the constructor default in Settings.lua (which is how showMoisture went missing and
+--     the HUD row stopped rendering on saves written before this key was added).
+-- UA: Значення конфігурації за замовчуванням. Кожен ключ з SERVER_SETTINGS / CLIENT_SETTINGS
+--     ПОВИНЕН мати запис тут — інакше xml:getBool повертає nil і затирає конструкторське значення.
 SettingsManager.defaultConfig = {
     difficultyMotor = 2,
     difficultyLoss = 2,
-    showHUD = true,
-    showYield = true,
-    showSpeedometer = true,
+    -- Server toggles
     enableCropLoss = false,
     enableMoisture = true,
     enableIndependentLaunch = true,
+    -- Client HUD toggles (all default true so a fresh install / legacy save shows everything)
+    showHUD = true,
+    showYield = true,
+    showLoad = true,
+    showProductivity = true,
+    showCropLoss = true,
+    showSpeed = true,
+    showMoisture = true,
+    showLoadWarnings = true,
+    showSpeedometer = true,
+    -- Client HUD layout
     hudOffsetX = 0,
     hudOffsetY = 350,
     unitSystem = 1
@@ -183,9 +197,26 @@ function SettingsManager:loadClientSettings(settingsObject)
                     -- UA: Позиція HUD зберігається як float (nil якщо не встановлено = автоматичне позиціонування).
                     settingsObject[key] = xml:getFloat(xmlKey)
                 else
-                    settingsObject[key] = xml:getBool(xmlKey, self.defaultConfig[key])
+                    -- EN: getBool returns the default when the XML key is missing. If BOTH the XML
+                    --     key is missing AND the defaultConfig entry is missing, we'd get nil —
+                    --     which silently broke showMoisture on legacy client.xml files. Guard with
+                    --     a hard-coded true fallback for any show* toggle so they never go nil.
+                    -- UA: Захист від nil — якщо defaultConfig не має запису, show* прапорці стають true.
+                    local def = self.defaultConfig[key]
+                    if def == nil and key:sub(1,4) == "show" then def = true end
+                    settingsObject[key] = xml:getBool(xmlKey, def)
+                    if settingsObject[key] == nil then
+                        print(string.format("RHM: [Settings] WARNING — client key '%s' loaded as nil (xmlMissing=%s, defaultConfig=%s) | forcing true",
+                            key, tostring(not xml:hasProperty(xmlKey)), tostring(self.defaultConfig[key])))
+                        settingsObject[key] = (key:sub(1,4) == "show") and true or false
+                    end
                 end
             end
+            print(string.format("RHM: [Settings] Client loaded | showMoisture=%s | showHUD=%s | showLoad=%s | showSpeed=%s",
+                tostring(settingsObject.showMoisture),
+                tostring(settingsObject.showHUD),
+                tostring(settingsObject.showLoad),
+                tostring(settingsObject.showSpeed)))
             xml:delete()
             return
         end

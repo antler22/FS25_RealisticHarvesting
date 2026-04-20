@@ -199,6 +199,13 @@ function CropThroughputConfig.load()
         i = i + 1
     end
 
+    -- EN: Load moisture thresholds from the same XML (the <moistureSettings> block).
+    --     MoistureCalculator keeps its own defaults if the block is absent.
+    -- UA: Завантажуємо пороги вологості з того ж XML (блок <moistureSettings>).
+    if MoistureCalculator and MoistureCalculator.loadFromXML then
+        MoistureCalculator.loadFromXML(xmlFile)
+    end
+
     deleteXMLFile(xmlFile)
     CropThroughputConfig._loaded = true
     CropThroughputConfig._source = source

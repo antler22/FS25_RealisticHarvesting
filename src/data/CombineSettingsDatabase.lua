@@ -25,12 +25,12 @@ local templates = {
     -- ============================
 
     -- Wheat/Rye/Spelt/Triticale
-    -- Rotor: 700 RPM → 63%, Concave: 3mm → 6%, Chaffer: 15mm → 50%, Sieve: 4mm → 13%, Fan: 1000 RPM → 56%
+    -- Rotor: 850 RPM → 81%, Concave: 2mm → 4%, Chaffer: 12mm → 40%, Sieve: 8mm → 27%, Fan: 1000 RPM → 56%
     wheat = {
-        rotor      = {optimal = 63, min = 50, max = 75, tolerance = 6},   -- 700 RPM
-        concave    = {optimal =  6, min =  2, max = 16, tolerance = 4},   -- 3 mm
-        upperSieve = {optimal = 50, min = 33, max = 63, tolerance = 6},   -- 15 mm
-        lowerSieve = {optimal = 13, min =  7, max = 23, tolerance = 5},   -- 4 mm
+        rotor      = {optimal = 81, min = 50, max = 90, tolerance = 6},   -- 850 RPM
+        concave    = {optimal =  4, min =  2, max = 16, tolerance = 4},   -- 2 mm
+        upperSieve = {optimal = 40, min = 33, max = 63, tolerance = 6},   -- 12 mm
+        lowerSieve = {optimal = 27, min =  7, max = 40, tolerance = 5},   -- 8 mm
         fan        = {optimal = 56, min = 37, max = 72, tolerance = 7},   -- 1000 RPM
     },
 
@@ -55,23 +55,23 @@ local templates = {
     },
 
     -- Canola (Rape Seed) — tiny seed, low rotor, tight concave
-    -- Rotor: ~430 RPM → 29%, Concave: 8mm → 16%, Chaffer: 8mm → 27%, Sieve: 4mm → 13%, Fan: 650 RPM → 17%
+    -- Rotor: 450 RPM → 31%, Concave: 4mm → 8%, Chaffer: 18mm → 60%, Sieve: 12mm → 40%, Fan: 850 RPM → 39%
     canola = {
-        rotor      = {optimal = 29, min = 15, max = 45, tolerance = 6},   -- ~430 RPM
-        concave    = {optimal = 16, min = 4,  max = 32, tolerance = 4},   -- 8 mm
-        upperSieve = {optimal = 27, min = 12, max = 47, tolerance = 4},   -- 8 mm
-        lowerSieve = {optimal = 13, min = 4,  max = 27, tolerance = 4},   -- 4 mm
-        fan        = {optimal = 17, min = 7,  max = 30, tolerance = 5},   -- 650 RPM
+        rotor      = {optimal = 31, min = 15, max = 45, tolerance = 6},   -- 450 RPM
+        concave    = {optimal =  8, min = 4,  max = 32, tolerance = 4},   -- 4 mm
+        upperSieve = {optimal = 60, min = 12, max = 100, tolerance = 4},  -- 18 mm
+        lowerSieve = {optimal = 40, min = 4,  max = 100, tolerance = 4},  -- 12 mm
+        fan        = {optimal = 39, min = 7,  max = 30, tolerance = 5},   -- 850 RPM
     },
 
     -- Soybean — medium rotor, higher fan
-    -- Rotor: ~390 RPM → 24%, Concave: 20mm → 40%, Chaffer: 15mm → 50%, Sieve: 10mm → 33%, Fan: 850 RPM → 39%
+    -- Rotor: 550 RPM → 44%, Concave: 5mm → 10%, Chaffer: 12mm → 40%, Sieve: 4mm → 13%, Fan: 1100 RPM → 67%
     soybean = {
-        rotor      = {optimal = 24, min = 10, max = 40, tolerance = 6},   -- ~390 RPM
-        concave    = {optimal = 40, min = 24, max = 56, tolerance = 6},   -- 20 mm
-        upperSieve = {optimal = 50, min = 33, max = 67, tolerance = 6},   -- 15 mm
-        lowerSieve = {optimal = 33, min = 20, max = 50, tolerance = 6},   -- 10 mm
-        fan        = {optimal = 39, min = 24, max = 56, tolerance = 7},   -- 850 RPM
+        rotor      = {optimal = 44, min = 10, max = 50, tolerance = 6},   -- 550 RPM
+        concave    = {optimal = 10, min = 0,  max = 56, tolerance = 6},   -- 5 mm
+        upperSieve = {optimal = 40, min = 33, max = 67, tolerance = 6},   -- 12 mm
+        lowerSieve = {optimal = 13, min = 0,  max = 50, tolerance = 6},   -- 4 mm
+        fan        = {optimal = 67, min = 24, max = 80, tolerance = 7},   -- 1100 RPM
     },
 
     -- Sunflower — very low rotor, wide concave
@@ -85,23 +85,23 @@ local templates = {
     },
 
     -- Sorghum — medium settings
-    -- Rotor: ~540 RPM → 43%, Concave: 18mm → 36%, Chaffer: 10mm → 33%, Sieve: 8mm → 27%, Fan: 750 RPM → 28%
+    -- Rotor: 450 RPM → 31%, Concave: 12mm → 24%, Chaffer: 16mm → 53%, Sieve: 5mm → 17%, Fan: 1100 RPM → 67%
     sorghum = {
-        rotor      = {optimal = 43, min = 28, max = 60, tolerance = 6},   -- ~540 RPM
-        concave    = {optimal = 36, min = 20, max = 52, tolerance = 5},   -- 18 mm
-        upperSieve = {optimal = 33, min = 18, max = 50, tolerance = 6},   -- 10 mm
-        lowerSieve = {optimal = 27, min = 15, max = 43, tolerance = 6},   -- 8 mm
-        fan        = {optimal = 28, min = 15, max = 44, tolerance = 7},   -- 750 RPM
+        rotor      = {optimal = 31, min = 28, max = 60, tolerance = 6},   -- 450 RPM
+        concave    = {optimal = 24, min = 20, max = 52, tolerance = 5},   -- 12 mm
+        upperSieve = {optimal = 53, min = 18, max = 70, tolerance = 6},   -- 16 mm
+        lowerSieve = {optimal = 17, min = 15, max = 43, tolerance = 6},   -- 5 mm
+        fan        = {optimal = 67, min = 15, max = 44, tolerance = 7},   -- 1100 RPM
     },
 
     -- Corn (Maize) — low rotor, wide openings, high fan
-    -- Rotor: ~340 RPM → 18%, Concave: 20mm → 40%, Chaffer: 18mm → 60%, Sieve: 12mm → 40%, Fan: 900 RPM → 44%
+    -- Rotor: 350 RPM → 19%, Concave: 28mm → 56%, Chaffer: 18mm → 60%, Sieve: 14mm → 47%, Fan: 1250 RPM → 83%
     corn = {
-        rotor      = {optimal = 18, min = 5,  max = 34, tolerance = 5},   -- ~340 RPM
-        concave    = {optimal = 40, min = 24, max = 56, tolerance = 5},   -- 20 mm
+        rotor      = {optimal = 19, min = 5,  max = 34, tolerance = 5},   -- 350 RPM
+        concave    = {optimal = 56, min = 24, max = 56, tolerance = 5},   -- 28 mm
         upperSieve = {optimal = 60, min = 43, max = 77, tolerance = 6},   -- 18 mm
-        lowerSieve = {optimal = 40, min = 27, max = 57, tolerance = 6},   -- 12 mm
-        fan        = {optimal = 44, min = 28, max = 61, tolerance = 6},   -- 900 RPM
+        lowerSieve = {optimal = 47, min = 27, max = 57, tolerance = 6},   -- 14 mm
+        fan        = {optimal = 83, min = 28, max = 100, tolerance = 6},  -- 1250 RPM
     },
 
     -- Legumes (Beans/Peas) — low rotor, medium-high fan

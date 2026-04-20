@@ -115,6 +115,11 @@ function CombineCalibrationGUI.new(modDirectory)
     self.scrollDelayMs = 100
 
     self.buttons = {}
+    -- EN: Displayed crop in the selector — may differ from memory.currentCrop while user browses.
+    --     Settings are NOT changed when toggling; only synced when LOAD is clicked.
+    -- UA: Відображувана культура у селекторі — може відрізнятись від memory.currentCrop при перегляді.
+    --     Налаштування НЕ змінюються при перегляді; синхронізуються лише при натисканні LOAD.
+    self.displayedCrop = nil
 
     local bgTexture = self.modDirectory .. "textures/hud_background.dds"
     self.overlay = Overlay.new(bgTexture, 0, 0, 1, 1)
@@ -203,6 +208,11 @@ function CombineCalibrationGUI:open(vehicle)
 
     self.activeVehicle = combineVehicle
     self.controllerVehicle = cv or vehicle or combineVehicle
+
+    -- EN: Sync displayed crop selector to the currently active crop when opening.
+    -- UA: Синхронізуємо відображувану культуру з поточною при відкритті.
+    local openSpec = combineVehicle.spec_rhm_Combine
+    self.displayedCrop = openSpec and openSpec.combineMemory and openSpec.combineMemory.currentCrop
 end
 
 -- EN: Closes the calibration GUI. Restores camera rotation and zoom.
@@ -212,6 +222,7 @@ function CombineCalibrationGUI:close()
 
     self.isOpen = false
     self.isCursorActive = false
+    self.displayedCrop = nil  -- EN: Reset preview on close / UA: Скидаємо попередній перегляд при закритті
 
     local vehicle = self.controllerVehicle
 
@@ -235,15 +246,20 @@ function CombineCalibrationGUI:close()
     end
 end
 
--- EN: Cycles to the previous (-1) or next (+1) crop in the machine-type-filtered list.
--- UA: Перемикає на попередню (-1) або наступну (+1) культуру у відфільтрованому списку.
+-- EN: Cycles the DISPLAYED crop label forward (-1) or backward (+1) in the machine-type list.
+--     Does NOT change memory.currentCrop or apply any settings — that only happens on LOAD click.
+--     The displayed crop may differ from the active crop; the name renders in amber to signal preview mode.
+-- UA: Перебирає ВІДОБРАЖУВАНУ мітку культури вперед/назад у списку типу машини.
+--     НЕ змінює memory.currentCrop і не застосовує жодних налаштувань — це відбувається лише при LOAD.
 function CombineCalibrationGUI:cycleCrop(direction)
     local spec = self.activeVehicle.spec_rhm_Combine
     local machineType = spec.machineType or "grain"
     local crops = CombineSettingsDatabase:getCropNamesForMachineType(machineType)
     if #crops == 0 then return end
 
-    local current = spec.combineMemory.currentCrop
+    -- EN: Use displayedCrop as the current position in the list (not the active crop).
+    -- UA: Використовуємо displayedCrop як поточну позицію у списку (не активну культуру).
+    local current = self.displayedCrop or spec.combineMemory.currentCrop
     local index = 1
 
     if current then
@@ -259,8 +275,9 @@ function CombineCalibrationGUI:cycleCrop(direction)
     if index > #crops then index = 1 end
     if index < 1 then index = #crops end
 
-    local newCrop = crops[index]
-    spec.combineMemory:switchCrop(newCrop)
+    -- EN: Only update the display; leave currentCrop and settings untouched.
+    -- UA: Оновлюємо лише відображення; currentCrop і налаштування залишаємо без змін.
+    self.displayedCrop = crops[index]
 end
 
 -- EN: Called every frame while open. Auto-closes if the player exits the vehicle.
@@ -547,26 +564,38 @@ function CombineCalibrationGUI:draw()
     local cropNavX = x + ui.margin + 0.030
     local arrowW = 0.020
     self:drawButton(cropNavX, cy + 0.004, arrowW, ui.buttonH, "<", function()
+        print(string.format("RHM: [GUI] Crop cycle LEFT clicked | displayedCrop=%s | currentCrop=%s",
+            tostring(self.displayedCrop), tostring(memory.currentCrop)))
         self:cycleCrop(-1)
     end)
 
-    local cropName = getLocalizedCropName(memory.currentCrop)
+    -- EN: displayedCrop tracks the browsed selection; may differ from memory.currentCrop.
+    --     isPreviewing = true when the user has scrolled to a different crop but not yet clicked LOAD.
+    -- UA: displayedCrop відстежує переглянутий вибір; може відрізнятись від memory.currentCrop.
+    local displayCrop  = self.displayedCrop or memory.currentCrop
+    local isPreviewing = displayCrop ~= nil and displayCrop ~= memory.currentCrop
+    local cropName     = getLocalizedCropName(displayCrop)
     setTextBold(true)
     setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextColor(unpack(memory.currentCrop and ui.colors.text or ui.colors.textDim))
+    -- EN: Amber color while previewing a different crop; white for the active crop.
+    -- UA: Бурштиновий колір при перегляді іншої культури; білий для активної.
+    setTextColor(unpack(isPreviewing and ui.colors.accent or (memory.currentCrop and ui.colors.text or ui.colors.textDim)))
     renderText(cropNavX + arrowW + 0.052, cy + 0.010, ui.fontSize, cropName)
 
     self:drawButton(cropNavX + arrowW + 0.104, cy + 0.004, arrowW, ui.buttonH, ">", function()
+        print(string.format("RHM: [GUI] Crop cycle RIGHT clicked | displayedCrop=%s | currentCrop=%s",
+            tostring(self.displayedCrop), tostring(memory.currentCrop)))
         self:cycleCrop(1)
     end)
 
     -- EN: Right-side crop button:
     --     Level 4 (Full Automation): AUTO toggle — when active, applies optimal on every crop change.
-    --     Level 0-3: LOAD button — one-shot apply of baseline settings for the current crop.
-    --       LOAD gives new players a reasonable starting point without unlocking full auto-management.
+    --     Level 0-3: LOAD button — switches to the displayed crop and applies its baseline settings.
+    --       Highlighted green when isPreviewing so the player knows clicking it will apply the change.
+    --       Clicking LOAD is the ONLY action that changes currentCrop or settings from this selector.
     -- UA: Кнопка праворуч від культури:
     --     Рівень 4: AUTO перемикач.
-    --     Рівень 0-3: LOAD — разове застосування базових налаштувань для поточної культури.
+    --     Рівень 0-3: LOAD — переключитись на відображувану культуру з базовими налаштуваннями.
     local autoBtnW = 0.065
     local autoBtnX = x + w - ui.margin - autoBtnW
     if upgradeLevel >= 4 then
@@ -576,13 +605,26 @@ function CombineCalibrationGUI:draw()
             and {0.20, 0.75, 0.30, 0.90}
             or  ui.colors.buttonAuto
         self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, autoLabel, function()
+            print(string.format("RHM: [GUI] AUTO button clicked | prevMode=%s | isAutoOn=%s",
+                tostring(memory.mode), tostring(isAutoOn)))
             memory:requestAutoSettings()
         end, autoColor)
-    elseif memory.currentCrop then
-        -- EN: LOAD — applies baseline (novice-friendly) settings as a one-shot starting point.
+    elseif displayCrop then
+        -- EN: LOAD — switches to the displayed crop (saves current profile, loads displayed crop's baseline).
+        --     Green highlight when in preview mode signals that clicking will apply a crop change.
+        -- UA: LOAD — переключається на відображувану культуру (зберігає поточний профіль, завантажує базовий).
+        local loadColor = isPreviewing and {0.06, 0.20, 0.06, 1.0} or ui.colors.button
         self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, "LOAD", function()
-            memory:autoConfigureForCrop(memory.currentCrop, false)
-        end, ui.colors.button)
+            local target = self.displayedCrop or memory.currentCrop
+            print(string.format("RHM: [GUI] LOAD button clicked | displayedCrop=%s | currentCrop=%s | target=%s",
+                tostring(self.displayedCrop), tostring(memory.currentCrop), tostring(target)))
+            if target then
+                memory:switchCrop(target)
+                -- EN: Sync displayedCrop — now the active and displayed crops match.
+                -- UA: Синхронізуємо displayedCrop — активна і відображувана культури тепер збігаються.
+                self.displayedCrop = target
+            end
+        end, loadColor)
     else
         -- EN: No crop detected yet — dim the button.
         self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, "LOAD", nil, {0.15, 0.15, 0.13, 0.40})
@@ -744,8 +786,11 @@ function CombineCalibrationGUI:draw()
         -- EN: Reset Session button.
         cy = cy - ui.lineHeight * 0.75  -- was 0.85
         self:drawButton(x + ui.margin, cy, w - ui.margin * 2, 0.020, "RESET SESSION", function()
+            print(string.format("RHM: [GUI] RESET SESSION button clicked | loadCalculator=%s",
+                tostring(spec.loadCalculator ~= nil)))
             if spec.loadCalculator then
                 spec.loadCalculator:resetSession()
+                print("RHM: [GUI] RESET SESSION — loadCalculator:resetSession() complete")
             end
         end, {0.15, 0.08, 0.05, 0.90})
 
@@ -785,13 +830,19 @@ function CombineCalibrationGUI:draw()
     self:drawButton(swBtnX, cy + 0.003, swBtnW, ui.buttonH, "-", function()
         local cur  = memory.swathWidth or 0
         local newW = math.max(0, cur - stepM)
-        memory.swathWidth = (newW < stepM * 0.5) and nil or newW
+        local finalW = (newW < stepM * 0.5) and nil or newW
+        print(string.format("RHM: [GUI] SWATH MINUS clicked | cur=%.3f m | stepM=%.3f | newW=%.3f | final=%s",
+            cur, stepM, newW, tostring(finalW)))
+        memory.swathWidth = finalW
     end, ui.colors.button)
     -- EN: Plus button — increase swath width.
     self:drawButton(swBtnX + swBtnW + 0.004, cy + 0.003, swBtnW, ui.buttonH, "+", function()
         local cur  = memory.swathWidth or 0
         local newW = math.max(stepM, cur + stepM)
-        memory.swathWidth = math.min(newW, 50)  -- EN: cap at 50 m / ~164 ft
+        local finalW = math.min(newW, 50)  -- EN: cap at 50 m / ~164 ft
+        print(string.format("RHM: [GUI] SWATH PLUS clicked | cur=%.3f m | stepM=%.3f | newW=%.3f | final=%.3f",
+            cur, stepM, newW, finalW))
+        memory.swathWidth = finalW
     end, ui.colors.button)
 
     -- ── Action buttons ──────────────────────────────────────────────────────
@@ -800,18 +851,34 @@ function CombineCalibrationGUI:draw()
     local btnWidth = (w - ui.margin * 2.5 - 0.008) / 2
 
     self:drawButton(x + ui.margin, cy, btnWidth, 0.022, g_i18n:getText("rhm_gui_btn_load_preset"), function()
+        print(string.format("RHM: [GUI] LOAD PRESET button clicked | currentCrop=%s | mode=%s | tier=%s",
+            tostring(memory.currentCrop), tostring(memory.mode), tostring(memory.upgradeLevel)))
         memory:loadUserPreset()
+        print("RHM: [GUI] LOAD PRESET — memory:loadUserPreset() complete")
     end, ui.colors.button)
 
     self:drawButton(x + w - ui.margin - btnWidth, cy, btnWidth, 0.022, g_i18n:getText("rhm_gui_btn_save"), function()
+        print(string.format("RHM: [GUI] SAVE PROFILE button clicked | currentCrop=%s | mode=%s | tier=%s | autoSwitch=%s",
+            tostring(memory.currentCrop), tostring(memory.mode),
+            tostring(memory.upgradeLevel), tostring(memory.autoSwitchEnabled)))
+        if memory.currentSettings then
+            print(string.format("RHM: [GUI] SAVE PROFILE — current settings fan=%s upper=%s lower=%s rotor=%s concave=%s",
+                tostring(memory.currentSettings.fan), tostring(memory.currentSettings.upperSieve),
+                tostring(memory.currentSettings.lowerSieve), tostring(memory.currentSettings.rotor),
+                tostring(memory.currentSettings.concave)))
+        end
         memory:saveCurrentProfile(memory.currentCrop)
+        print("RHM: [GUI] SAVE PROFILE — memory:saveCurrentProfile() complete")
     end, ui.colors.buttonSave)
 
     -- Row 2: Reset Default
     cy = cy - ui.lineHeight * 1.0
     local resetBtnW = w - ui.margin * 2
     self:drawButton(x + ui.margin, cy, resetBtnW, 0.022, g_i18n:getText("rhm_gui_btn_reset"), function()
+        print(string.format("RHM: [GUI] RESET DEFAULT button clicked | currentCrop=%s | mode=%s",
+            tostring(memory.currentCrop), tostring(memory.mode)))
         memory:requestResetSettings()
+        print("RHM: [GUI] RESET DEFAULT — memory:requestResetSettings() complete")
     end, ui.colors.buttonReset)
 
     -- ── Scroll wheel handling ───────────────────────────────────────────────
@@ -1064,11 +1131,23 @@ function CombineCalibrationGUI:drawParameterRow(x, y, w, param, label, memory, u
 
     -- ── [-] and [+] buttons ────────────────────────────────────────────────
     self:drawButton(btnStartX, y + 0.004, ui.buttonW, ui.buttonH, "-", function()
+        local before = memory.currentSettings[param] or 0
+        print(string.format("RHM: [GUI] PARAM MINUS clicked | param=%s | before=%s | crop=%s | mode=%s",
+            tostring(param), tostring(before), tostring(memory.currentCrop), tostring(memory.mode)))
         performSmartStep(-1)
+        local after = memory.currentSettings[param] or 0
+        print(string.format("RHM: [GUI] PARAM MINUS done    | param=%s | after=%s | delta=%s",
+            tostring(param), tostring(after), tostring(after - before)))
     end)
 
     self:drawButton(btnStartX + ui.buttonW + 0.004, y + 0.004, ui.buttonW, ui.buttonH, "+", function()
+        local before = memory.currentSettings[param] or 0
+        print(string.format("RHM: [GUI] PARAM PLUS  clicked | param=%s | before=%s | crop=%s | mode=%s",
+            tostring(param), tostring(before), tostring(memory.currentCrop), tostring(memory.mode)))
         performSmartStep(1)
+        local after = memory.currentSettings[param] or 0
+        print(string.format("RHM: [GUI] PARAM PLUS  done    | param=%s | after=%s | delta=%s",
+            tostring(param), tostring(after), tostring(after - before)))
     end)
 end
 

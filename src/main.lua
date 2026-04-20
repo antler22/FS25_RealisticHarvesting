@@ -31,7 +31,12 @@ source(modDirectory .. "src/settings/ProfileManager.lua")
 source(modDirectory .. "src/settings/CombineMemory.lua")
 source(modDirectory .. "src/network/CombineSettingsEvent.lua")
 source(modDirectory .. "src/integration/MoistureAdapter.lua")
+-- EN: MoistureCalculator must be loaded AFTER MoistureAdapter (reads isActive) and BEFORE
+--     CropThroughputConfig (which calls MoistureCalculator.loadFromXML on mission load).
+-- UA: MoistureCalculator завантажується ПІСЛЯ MoistureAdapter і ДО CropThroughputConfig.
+source(modDirectory .. "src/integration/MoistureCalculator.lua")
 source(modDirectory .. "src/config/CropThroughputConfig.lua")
+source(modDirectory .. "src/dev/CropFactorTuning.lua")
 source(modDirectory .. "src/logic/LoadCalculator.lua")
 source(modDirectory .. "src/shop/RHMShopIntegration.lua")
 source(modDirectory .. "src/rhm_Combine.lua")
@@ -71,10 +76,24 @@ local function loadedMission(mission, node)
         UnitConverter.initBushelCoefficients()
     end
 
+    -- EN: Initialize crop density table (real-world values override FS25's internal densities
+    --     which are incorrect for some crops, most notably sorghum).
+    -- UA: Ініціалізуємо таблицю густин культур (реальні значення замінюють внутрішні FS25,
+    --     які некоректні для деяких культур, зокрема сорго).
+    if UnitConverter and UnitConverter.initCropDensities then
+        UnitConverter.initCropDensities()
+    end
+
     -- EN: Load per-crop throughput overrides from modSettings XML (if present).
     -- UA: Завантажуємо перевизначення продуктивності культур з modSettings XML (якщо є).
     if CropThroughputConfig and CropThroughputConfig.load then
         CropThroughputConfig.load()
+    end
+
+    -- EN: Load any saved crop factor overrides from the dev tuning tool (no-op when ENABLED=false).
+    -- UA: Завантажуємо збережені перевизначення коефіцієнтів культур з інструменту розробника.
+    if CropFactorTuning and CropFactorTuning.loadFromDisk then
+        CropFactorTuning.loadFromDisk()
     end
 
     rhm:onMissionLoaded()
@@ -134,6 +153,39 @@ end
 -- UA: Підключаємось до життєвого циклу місії через Utils.appendedFunction/prependedFunction від FS25.
 Mission00.load = Utils.prependedFunction(Mission00.load, load)
 Mission00.loadMission00Finished = Utils.appendedFunction(Mission00.loadMission00Finished, loadedMission)
+
+-- EN: Profile flush MUST be prepended — FSBaseMission.delete cleans up vehicles, so an appended
+--     save would iterate an empty vehicle list and silently lose the session's settings.
+-- UA: Зберігання профілів ОБОВ'ЯЗКОВО prepended — FSBaseMission.delete очищає транспорт,
+--     тому appended збереження ітеруватиме порожній список і мовчки втратить налаштування сесії.
+FSBaseMission.delete = Utils.prependedFunction(FSBaseMission.delete, function()
+    print(string.format("RHM: [DELETE-DIAG] FSBaseMission.delete prepend fired | rhm=%s | profileManager=%s | vehicles=%s",
+        tostring(rhm ~= nil),
+        tostring(rhm and rhm.profileManager ~= nil or false),
+        tostring(g_currentMission and g_currentMission.vehicles ~= nil or false)))
+    if rhm and rhm.profileManager and g_currentMission and g_currentMission.vehicles then
+        local vehicleCount = 0
+        for _ in pairs(g_currentMission.vehicles) do vehicleCount = vehicleCount + 1 end
+        print(string.format("RHM: [DELETE-DIAG] vehicle count = %d", vehicleCount))
+        for _, vehicle in pairs(g_currentMission.vehicles) do
+            local spec = vehicle.spec_rhm_Combine
+            local vName = vehicle.configFileName or tostring(vehicle)
+            if spec and spec.combineMemory then
+                local mem = spec.combineMemory
+                print(string.format("RHM: [DELETE-DIAG]   vehicle=%s | currentCrop=%s | hasSettings=%s",
+                    tostring(vName), tostring(mem.currentCrop), tostring(mem.currentSettings ~= nil)))
+                if mem.currentCrop and mem.currentSettings then
+                    rhm.profileManager:saveProfile(mem.currentCrop, mem.currentSettings)
+                end
+            else
+                print(string.format("RHM: [DELETE-DIAG]   vehicle=%s | spec_rhm_Combine=%s (skipped)",
+                    tostring(vName), tostring(spec ~= nil)))
+            end
+        end
+    end
+end)
+-- EN: Cleanup (HUD/GUI teardown + global ref removal) is safe to append — no vehicle dependency.
+-- UA: Очищення (HUD/GUI + глобальне посилання) безпечно додавати після — не залежить від транспорту.
 FSBaseMission.delete = Utils.appendedFunction(FSBaseMission.delete, unload)
 
 -- EN: Update hook — runs every game frame to update HUD data and calibration GUI state.

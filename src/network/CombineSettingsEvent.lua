@@ -35,11 +35,12 @@ function CombineSettingsEvent:readStream(streamId, connection)
     self.isFullProfile = streamReadBool(streamId)
 
     if self.isFullProfile then
-        -- EN: Full profile mode: read all 5 parameter values.
-        -- UA: Режим повного профілю: зчитуємо всі 5 значень параметрів.
+        -- EN: Full profile mode: read all grain params including concave.
+        -- UA: Режим повного профілю: зчитуємо всі зернові параметри включно з декою.
         self.fullSettings = {}
         self.fullSettings.fan = streamReadUInt8(streamId)
         self.fullSettings.rotor = streamReadUInt8(streamId)
+        self.fullSettings.concave = streamReadUInt8(streamId)
         self.fullSettings.upperSieve = streamReadUInt8(streamId)
         self.fullSettings.lowerSieve = streamReadUInt8(streamId)
         self.fullSettings.feeder = streamReadUInt8(streamId)
@@ -60,10 +61,11 @@ function CombineSettingsEvent:writeStream(streamId, connection)
     streamWriteBool(streamId, self.isFullProfile)
 
     if self.isFullProfile then
-        -- EN: Write all 5 parameter values for a full profile transfer.
-        -- UA: Записуємо всі 5 значень параметрів для передачі повного профілю.
+        -- EN: Write all grain params for a full profile transfer (must match readStream order).
+        -- UA: Записуємо всі зернові параметри (порядок повинен збігатися з readStream).
         streamWriteUInt8(streamId, self.fullSettings.fan or 50)
         streamWriteUInt8(streamId, self.fullSettings.rotor or 50)
+        streamWriteUInt8(streamId, self.fullSettings.concave or 50)
         streamWriteUInt8(streamId, self.fullSettings.upperSieve or 50)
         streamWriteUInt8(streamId, self.fullSettings.lowerSieve or 50)
         streamWriteUInt8(streamId, self.fullSettings.feeder or 50)
@@ -90,6 +92,7 @@ function CombineSettingsEvent:run(connection)
                 -- UA: Застосовуємо повний профіль користувача до пам'яті комбайна.
                 mem.currentSettings.fan = self.fullSettings.fan
                 mem.currentSettings.rotor = self.fullSettings.rotor
+                mem.currentSettings.concave = self.fullSettings.concave
                 mem.currentSettings.upperSieve = self.fullSettings.upperSieve
                 mem.currentSettings.lowerSieve = self.fullSettings.lowerSieve
                 mem.currentSettings.feeder = self.fullSettings.feeder
@@ -148,6 +151,7 @@ function CombineSettingsEvent:run(connection)
             local fullSettings = {
                 fan = mem.currentSettings.fan,
                 rotor = mem.currentSettings.rotor,
+                concave = mem.currentSettings.concave,
                 upperSieve = mem.currentSettings.upperSieve,
                 lowerSieve = mem.currentSettings.lowerSieve,
                 feeder = mem.currentSettings.feeder,
@@ -167,6 +171,7 @@ function CombineSettingsEvent:run(connection)
             if self.isFullProfile then
                 mem.currentSettings.fan = self.fullSettings.fan
                 mem.currentSettings.rotor = self.fullSettings.rotor
+                mem.currentSettings.concave = self.fullSettings.concave
                 mem.currentSettings.upperSieve = self.fullSettings.upperSieve
                 mem.currentSettings.lowerSieve = self.fullSettings.lowerSieve
                 mem.currentSettings.feeder = self.fullSettings.feeder

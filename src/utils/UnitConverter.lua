@@ -66,6 +66,74 @@ end
 -- UA: Коефіцієнт бушеля за замовчуванням, якщо культура не знайдена в таблиці (еквівалент пшениці).
 UnitConverter.BUSHEL_DEFAULT = 36.76
 
+-- EN: Table of real-world crop bulk densities (kg/L), initialized lazily after mission load.
+--     Used for mass calculation in place of FS25's internal fillType.massPerLiter, which has
+--     incorrect values for at least sorghum (FS25 stores ~2.3 kg/L vs the real-world 0.72 kg/L),
+--     causing yield to appear ~3× too high for that crop.  All values derived from USDA standard
+--     bushel weights: density (kg/L) = lbs_per_bu × 0.453592 / 35.2391.
+-- UA: Таблиця реальних насипних густин культур (кг/л), ліниво ініціалізується після завантаження місії.
+--     Використовується для обчислення маси замість внутрішнього fillType.massPerLiter FS25,
+--     який має хибні значення для деяких культур (наприклад, сорго).
+UnitConverter.CROP_DENSITY_KG_L = {}
+
+-- EN: Initializes crop density table using real-world USDA bulk densities.
+--     Must be called after mission load (requires g_fillTypeManager and FillType to be available).
+-- UA: Ініціалізує таблицю густин культур за реальними значеннями USDA.
+--     Має бути викликаний після завантаження місії (потрібні g_fillTypeManager та FillType).
+function UnitConverter.initCropDensities()
+    -- EN: IMPORTANT: The lookup key must be a FillType ID (spec.lastFillType), NOT FruitType ID.
+    --     FruitType and FillType are separate enumerations in FS25 with different numeric values
+    --     for the same crop name.  Using FruitType IDs as keys here silently breaks every lookup
+    --     and causes the fallback massPerLiter to be used instead (which is ~3× wrong for sorghum).
+    -- UA: ВАЖЛИВО: Ключ таблиці — FillType ID (spec.lastFillType), НЕ FruitType ID.
+    --     FruitType та FillType — окремі переліки FS25 з різними числовими значеннями для однієї культури.
+    if not g_fillTypeManager then return end
+    UnitConverter.CROP_DENSITY_KG_L = {}
+    local added = 0
+    local function addDensity(name, val)
+        -- EN: Key by FillType ID to match how spec.lastFillType (a FillType index) is stored.
+        -- UA: Ключуємо за FillType ID, щоб відповідати spec.lastFillType (індекс FillType).
+        if FillType and FillType[name] then
+            UnitConverter.CROP_DENSITY_KG_L[FillType[name]] = val
+            added = added + 1
+        end
+    end
+    -- EN: density = lbs_per_bu × 0.453592 kg/lb ÷ 35.2391 L/bu  (USDA standard bushel weights)
+    -- UA: Формула: кг/л = фунти/буш × 0.453592 / 35.2391
+    addDensity("WHEAT",         0.772)  -- 60 lb/bu
+    addDensity("BARLEY",        0.618)  -- 48 lb/bu
+    addDensity("OAT",           0.412)  -- 32 lb/bu
+    addDensity("RYE",           0.721)  -- 56 lb/bu
+    addDensity("RICE",          0.579)  -- 45 lb/bu (rough rice)
+    addDensity("RICELONGGRAIN", 0.579)  -- same as rough rice
+    addDensity("SORGHUM",       0.721)  -- 56 lb/bu  ← fixes FS25's ~3× inflation
+    addDensity("MAIZE",         0.721)  -- 56 lb/bu
+    addDensity("SOYBEAN",       0.772)  -- 60 lb/bu
+    addDensity("CANOLA",        0.643)  -- 50 lb/bu
+    addDensity("SUNFLOWER",     0.322)  -- 25 lb/bu (oil sunflower with hull)
+    addDensity("COTTON",        0.412)  -- 32 lb/bu (seed cotton)
+    addDensity("SUGARBEET",     0.760)  -- approximate
+    addDensity("POTATO",        0.770)  -- approximate
+    -- EN: Diagnostic: confirm how many entries resolved and what FillType ID SORGHUM got.
+    --     If SORGHUM FillType ID is nil the density fix is silently inactive for that crop.
+    -- UA: Діагностика: підтверджуємо кількість записів і FillType ID для SORGHUM.
+    local sorghumId = FillType and FillType["SORGHUM"]
+    print(string.format("RHM: [DENSITY-DIAG] initCropDensities complete | entries=%d | FillType.SORGHUM=%s | density[SORGHUM]=%.3f",
+        added,
+        tostring(sorghumId),
+        (sorghumId and UnitConverter.CROP_DENSITY_KG_L[sorghumId]) or 0))
+end
+
+-- EN: Returns the real-world bulk density (kg/L) for a given fill type index, or nil if unknown.
+--     Returns nil (not a fallback) so callers can decide their own fallback strategy.
+-- UA: Повертає реальну насипну густину (кг/л) для заданого типу заповнення, або nil якщо невідомо.
+function UnitConverter.getCropDensityKgL(fillTypeIndex)
+    if fillTypeIndex and UnitConverter.CROP_DENSITY_KG_L[fillTypeIndex] then
+        return UnitConverter.CROP_DENSITY_KG_L[fillTypeIndex]
+    end
+    return nil
+end
+
 -- EN: Converts a speed value from km/h to the active unit system.
 -- UA: Конвертує значення швидкості з км/год у поточну систему одиниць.
 function UnitConverter.convertSpeed(kmh, system)

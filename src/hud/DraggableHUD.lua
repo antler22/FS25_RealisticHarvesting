@@ -27,11 +27,13 @@ function DraggableHUD.new(modDirectory, settings)
         headerLoss = 0,
         tonPerHour = 0,
         litersPerHour = 0,
+        acPerHour = 0,
         recommendedSpeed = 0,
         isPlugged = false,
         plugTimerPct = 0,
         moistureLabel = "",
         grainMoisture = 0,
+        moistureSource = "none",   -- EN: "external" (Moisture System mod) | "time-of-day" | "none"
     }
 
     self.width = 0.11
@@ -188,7 +190,15 @@ function DraggableHUD:setVehicle(vehicle)
         self.data.cropLoss = 0
         self.data.tonPerHour = 0
         self.data.litersPerHour = 0
+        self.data.acPerHour = 0
         self.data.recommendedSpeed = 0
+        -- EN: Clear frozen display caches so stale values don't carry over to the next vehicle.
+        self._lastYieldUpdate     = nil
+        self._yieldDisplayValue   = nil
+        self._lastProdUpdate      = nil
+        self._prodDisplayTon      = nil
+        self._prodDisplayLiters   = nil
+        self._prodDisplayAcPerHr  = nil
     end
 end
 
@@ -209,10 +219,40 @@ function DraggableHUD:update(dt)
     self.data.litersPerHour    = spec.data.litersPerHour or 0
     self.data.recommendedSpeed = spec.data.recommendedSpeed or 0
     self.data.speed            = vehicle:getLastSpeed() or 0
+
+    -- EN: ac/hr from geometric swept area: speed (km/h) × header width (m) / 10 = ha/hr.
+    --     Header width sourced from cached cutter width (same source as yield calculation).
+    -- UA: ак/год з геометричної площі: швидкість × ширина жатки / 10 = га/год.
+    local headerWidth = spec._cachedCutWidth or 0
+    if headerWidth <= 0 and spec.combineMemory then
+        headerWidth = spec.combineMemory.swathWidth or 0
+    end
+    if headerWidth > 0 and self.data.speed > 0.5 then
+        self.data.acPerHour = (self.data.speed * headerWidth / 10) * 2.47105  -- ha/hr → ac/hr
+    else
+        self.data.acPerHour = 0
+    end
     self.data.isPlugged        = spec.data.isPlugged or false
     self.data.plugTimerPct     = spec.data.plugTimerPct or 0
     self.data.moistureLabel    = spec.data.moistureLabel or ""
     self.data.grainMoisture    = spec.data.grainMoisture or 0
+    self.data.moistureSource   = spec.data.moistureSource or "none"
+
+    -- EN: One-time-per-vehicle diagnostic of the moisture pipeline. Logs on the first
+    --     updateData tick after the HUD attaches to a new vehicle so we can see at a
+    --     glance whether data is flowing through correctly.
+    -- UA: Разова діагностика каналу вологості — по першому тіку на нову машину.
+    if self._moistureDiagVehicle ~= self.vehicle then
+        self._moistureDiagVehicle = self.vehicle
+        print(string.format(
+            "RHM: [HUD-DIAG] Moisture pipe | showMoisture=%s | source=%s | label=%q | grain=%.2f | MoistureAdapter.isActive=%s | MoistureCalculator=%s",
+            tostring(self.settings and self.settings.showMoisture),
+            tostring(self.data.moistureSource),
+            tostring(self.data.moistureLabel),
+            self.data.grainMoisture or 0,
+            tostring(MoistureAdapter and MoistureAdapter.isActive),
+            tostring(MoistureCalculator ~= nil)))
+    end
 
     if self.dragging then
         if g_inputBinding and g_inputBinding.getMousePosition then
@@ -228,13 +268,10 @@ function DraggableHUD:draw()
     if not g_currentMission:getIsClient() then return end
     if not self.settings.showHUD then return end
     if not self.vehicle then return end
-    -- EN: Hide the compact HUD while the calibration GUI is open — the GUI shows all the same
-    --     information in a larger format, so the HUD would just add visual clutter on top.
-    -- UA: Приховуємо компактний HUD поки відкритий GUI калібрування — GUI вже показує ту саму інформацію.
-    if g_realisticHarvestManager and g_realisticHarvestManager.calibrationGUI
-            and g_realisticHarvestManager.calibrationGUI.isOpen then
-        return
-    end
+    -- EN: HUD stays visible while the calibration GUI is open so the player can watch
+    --     live loss readings change in real time as they adjust settings.
+    -- UA: HUD залишається видимим коли відкритий GUI калібрування, щоб гравець бачив
+    --     зміни в реальному часі при регулюванні налаштувань.
 
     self:updateSize()
 
@@ -359,19 +396,46 @@ function DraggableHUD:drawContent()
         textY = textY - lineHeight
     end
 
-    -- EN: Row 3 — Productivity.
-    -- UA: Рядок 3 — Продуктивність.
+    -- EN: Row 3 — Productivity (bu/hr) and Row 4 — Area rate (ac/hr or ha/hr).
+    --     Refreshed every 2.5 seconds — same window as the underlying rolling average —
+    --     so the number only changes when there is genuinely new data, not every frame.
+    -- UA: Рядок 3 — Продуктивність (бу/год) і Рядок 4 — Площа (ак/год або га/год).
+    --     Оновлюється кожні 2.5 секунди — те саме вікно що й ковзне середнє.
     if self.settings.showProductivity then
-        local prodVal = self.data.tonPerHour or 0
+        local now = g_time or 0
+        if not self._lastProdUpdate or (now - self._lastProdUpdate) >= 2500 then
+            self._lastProdUpdate = now
+            self._prodDisplayTon     = self.data.tonPerHour or 0
+            self._prodDisplayLiters  = self.data.litersPerHour or 0
+            self._prodDisplayAcPerHr = self.data.acPerHour or 0
+        end
+
+        local prodVal    = self._prodDisplayTon    or (self.data.tonPerHour    or 0)
+        local litersVal  = self._prodDisplayLiters or (self.data.litersPerHour or 0)
+        local acPerHrVal = self._prodDisplayAcPerHr or (self.data.acPerHour    or 0)
+
         local prodStr
         if UnitConverter then
-            local val, suffix = UnitConverter.convertProductivity(prodVal, unitSystem, fruitType, self.data.litersPerHour)
+            local val, suffix = UnitConverter.convertProductivity(prodVal, unitSystem, fruitType, litersVal)
             prodStr = string.format("%.1f %s", val, suffix)
         else
             prodStr = string.format("%.1f t/h", prodVal)
         end
         self:drawRow(iconX, textX, textY, iconWidth, iconHeight, textSize, "productivity", prodStr, 0)
         textY = textY - lineHeight
+
+        -- EN: Row — Area productivity (ac/hr or ha/hr).
+        -- UA: Рядок — Продуктивність по площі (ак/год або га/год).
+        if acPerHrVal > 0 then
+            local areaRateStr
+            if UnitConverter and (unitSystem == UnitConverter.SYSTEM_IMPERIAL or unitSystem == UnitConverter.SYSTEM_BUSHELS) then
+                areaRateStr = string.format("%.1f ac/h", acPerHrVal)
+            else
+                areaRateStr = string.format("%.1f ha/h", acPerHrVal / 2.47105)
+            end
+            self:drawRow(iconX, textX, textY, iconWidth, iconHeight, textSize, "productivity", areaRateStr, 0)
+            textY = textY - lineHeight
+        end
     end
 
     -- EN: Loss rows — always visible when showCropLoss is enabled.
@@ -501,27 +565,36 @@ function DraggableHUD:drawContent()
         end
     end
 
-    -- EN: Plant moisture indicator (time-of-day) — shown when conditions are non-optimal.
-    -- UA: Індикатор вологості рослини (час доби) — показується при несприятливих умовах.
-    if (self.data.moistureLabel or "") ~= "" then
-        self:drawRow(iconX, textX, textY, iconWidth, iconHeight, textSize, "moisture",
-            self.data.moistureLabel, 0, 0.65, 0.60, 0.40)
-        textY = textY - lineHeight
-    end
+    -- EN: Moisture row — ONLY shown when the external Moisture System mod is installed, enabled,
+    --     and actively returning a grain-moisture reading. When absent, the row is hidden entirely;
+    --     plant-material moisture from time-of-day is still used internally for load/loss/speed
+    --     math, but the player doesn't need to see it on the HUD (it's implicit).
+    --     Gated by: settings.showMoisture AND MoistureAdapter.isActive AND source == "external" AND gm > 0.
+    -- UA: Рядок вологості — показується ТІЛЬКИ коли зовнішній мод Moisture System активний і повертає
+    --     показник вологості зерна. Інакше рядок повністю прихований.
+    if self.settings.showMoisture then
+        local extActive = MoistureAdapter and MoistureAdapter.isActive
+        local source    = self.data.moistureSource or "none"
+        local gm        = self.data.grainMoisture or 0
 
-    -- EN: Grain moisture indicator — shown when 'Moisture System' mod is active and moisture > 0.
-    --     Color-coded: green ≤14% (at-limit), yellow 14–20%, red >20% (significant penalty).
-    -- UA: Індикатор вологості зерна — показується коли мод 'Moisture System' активний і вологість > 0.
-    if self.settings.showMoisture and MoistureAdapter and MoistureAdapter.isActive then
-        local gm = self.data.grainMoisture or 0
-        local gmStr = string.format("%.1f%%", gm)
-        local gmR, gmG, gmB
-        if gm > 20 then       gmR, gmG, gmB = 0.89, 0.29, 0.29  -- EN: Red — high penalty
-        elseif gm > 14 then   gmR, gmG, gmB = 0.91, 0.78, 0.25  -- EN: Yellow — above limit
-        else                  gmR, gmG, gmB = 0.24, 0.72, 0.47  -- EN: Green — within safe range
+        if extActive and source == "external" and gm > 0 then
+            local gmStr = string.format("%.1f%%", gm)
+            local gmR, gmG, gmB
+            if MoistureCalculator then
+                local rhmSpec = self.vehicle and self.vehicle.spec_rhm_Combine
+                local cropName = rhmSpec and rhmSpec.combineMemory and rhmSpec.combineMemory.currentCrop
+                gmR, gmG, gmB = MoistureCalculator.getHUDColor(cropName, gm)
+            end
+            if gmR == nil then
+                if gm > 20 then       gmR, gmG, gmB = 0.89, 0.29, 0.29
+                elseif gm > 14 then   gmR, gmG, gmB = 0.91, 0.78, 0.25
+                else                  gmR, gmG, gmB = 0.24, 0.72, 0.47
+                end
+            end
+            self:drawRow(iconX, textX, textY, iconWidth, iconHeight, textSize,
+                "moisture", gmStr, gm, gmR, gmG, gmB)
+            textY = textY - lineHeight
         end
-        self:drawRow(iconX, textX, textY, iconWidth, iconHeight, textSize, "moisture", gmStr, gm, gmR, gmG, gmB)
-        textY = textY - lineHeight
     end
 
     -- EN: Speed row (current / recommended).
@@ -567,7 +640,11 @@ function DraggableHUD:updateSize()
     local rowCount = 0
     if self.settings.showLoad        then rowCount = rowCount + 1 end
     if self.settings.showYield       then rowCount = rowCount + 1 end
-    if self.settings.showProductivity then rowCount = rowCount + 1 end
+    if self.settings.showProductivity then
+        rowCount = rowCount + 1
+        -- EN: ac/hr row appears alongside productivity when moving.
+        if self.data.acPerHour > 0 then rowCount = rowCount + 1 end
+    end
 
     if self.settings.showCropLoss then
         if isForage then
@@ -579,10 +656,17 @@ function DraggableHUD:updateSize()
         end
     end
 
-    -- EN: Plant moisture indicator (time-of-day) — shown when conditions are non-optimal.
-    if (self.data.moistureLabel or "") ~= "" then rowCount = rowCount + 1 end
-    -- EN: Grain moisture indicator — shown when 'Moisture System' mod is active.
-    if self.settings.showMoisture and MoistureAdapter and MoistureAdapter.isActive then rowCount = rowCount + 1 end
+    -- EN: Grain moisture indicator — counted ONLY when the external Moisture System mod is
+    --     active and has provided a reading. Must mirror the render-side gate exactly so the
+    --     HUD auto-sizes correctly (no phantom blank row when the mod isn't installed).
+    -- UA: Індикатор вологості зерна — рахується ТІЛЬКИ коли зовнішній мод активний і
+    --     надав показник. Має точно віддзеркалювати умови рендеру щоб HUD правильно масштабувався.
+    if self.settings.showMoisture
+        and MoistureAdapter and MoistureAdapter.isActive
+        and (self.data.moistureSource == "external")
+        and (self.data.grainMoisture or 0) > 0 then
+        rowCount = rowCount + 1
+    end
     -- EN: Plug warning — always visible when plugged (critical safety info).
     if self.data.isPlugged then rowCount = rowCount + 1 end
     if self.settings.showSpeed then rowCount = rowCount + 1 end

@@ -93,6 +93,13 @@ function RealisticHarvestManager.new(mission, modDirectory, modName)
         self.calibrationGUI = CombineCalibrationGUI.new(modDirectory)
     end
 
+    -- EN: Create the dev-only crop factor tuning overlay (client only, no-op when ENABLED=false).
+    -- UA: Створюємо оверлей налаштування коефіцієнтів культур (тільки клієнт, no-op якщо ENABLED=false).
+    if mission:getIsClient() and CropFactorTuning and CropFactorTuning.isEnabled() then
+        self.cropFactorTuneGUI = CropFactorTuningGui.new(modDirectory)
+        CropFactorTuning.registerConsoleCommand()
+    end
+
     return self
 end
 
@@ -191,6 +198,10 @@ function RealisticHarvestManager:update(dt)
         self.calibrationGUI:update(dt)
     end
 
+    if self.cropFactorTuneGUI then
+        self.cropFactorTuneGUI:update(dt)
+    end
+
     if self.hud then
         local vehicle = self:getControlledVehicle()
         local combineVehicle = nil
@@ -232,6 +243,12 @@ function RealisticHarvestManager:draw()
         self.calibrationGUI:draw()
     end
 
+    -- EN: Dev crop factor tuning overlay (drawn topmost; no-op when ENABLED=false).
+    -- UA: Оверлей налаштування коефіцієнтів культур для розробника.
+    if self.cropFactorTuneGUI then
+        self.cropFactorTuneGUI:draw()
+    end
+
     -- EN: Respect third-party HUD hider mods by checking game HUD visibility.
     -- UA: Поважаємо сторонні моди приховування HUD, перевіряючи видимість HUD гри.
     if g_currentMission and g_currentMission.hud and not g_currentMission.hud:getIsVisible() then
@@ -257,23 +274,11 @@ end
 -- EN: Cleans up all HUD and GUI resources on mission end.
 -- UA: Очищає всі ресурси HUD і GUI при завершенні місії.
 function RealisticHarvestManager:delete()
-    -- EN: Flush the current crop's settings for every loaded combine before teardown.
-    --     switchCrop() only saves when the crop *changes*, so a single-crop session or a
-    --     session where the player exits mid-field would lose all manual adjustments without this.
-    -- UA: Зберігаємо поточні налаштування кожного комбайна перед завершенням.
-    --     switchCrop() зберігає тільки при зміні культури, тому без цього manual-зміни
-    --     за сесію з однією культурою або при виході з поля будуть втрачені.
-    if self.profileManager and g_currentMission and g_currentMission.vehicles then
-        for _, vehicle in pairs(g_currentMission.vehicles) do
-            local spec = vehicle.spec_rhm_Combine
-            if spec and spec.combineMemory then
-                local mem = spec.combineMemory
-                if mem.currentCrop and mem.currentSettings then
-                    self.profileManager:saveProfile(mem.currentCrop, mem.currentSettings)
-                end
-            end
-        end
-    end
+    -- EN: Profile flush is handled by the prepended FSBaseMission.delete hook in main.lua.
+    --     It runs BEFORE the base mission cleans up vehicles, so g_currentMission.vehicles
+    --     is still populated. No need to save here — doing so would be redundant or fail
+    --     (vehicles may already be gone by the time this appended delete runs).
+    -- UA: Зберігання профілів виконується у prepended хуку FSBaseMission.delete в main.lua.
 
     if self.hud then
         self.hud:delete()
@@ -281,6 +286,10 @@ function RealisticHarvestManager:delete()
     end
     if self.calibrationGUI then
         self.calibrationGUI:delete()
+    end
+    if self.cropFactorTuneGUI then
+        self.cropFactorTuneGUI:delete()
+        self.cropFactorTuneGUI = nil
     end
 end
 
@@ -291,6 +300,10 @@ end
 function RealisticHarvestManager:mouseEvent(posX, posY, isDown, isUp, button)
     if not self.mission:getIsClient() then
         return
+    end
+
+    if self.cropFactorTuneGUI and self.cropFactorTuneGUI:mouseEvent(posX, posY, isDown, isUp, button) then
+        return true
     end
 
     if self.calibrationGUI and self.calibrationGUI:mouseEvent(posX, posY, isDown, isUp, button) then

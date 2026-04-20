@@ -76,6 +76,68 @@
 
 <cropThroughput>
 
+    <!--
+    ════════════════════════════════════════════════════════════════════════════
+    MOISTURE SYSTEM INTEGRATION  (requires the FS25_MoistureSystem mod)
+    ════════════════════════════════════════════════════════════════════════════
+
+    enableLoad   — wet crop raises effective engine load (harder to thresh).
+    enableLoss   — wet crop raises grain losses on sieves / rotor.
+    enableSpeed  — wet standing crop reduces the recommended-speed cap.
+
+    Set any flag to "false" to disable that effect channel independently.
+
+    GLOBAL SCALE FACTORS
+      maxLoadFactor     (+30% at max moisture by default)
+      maxLossFactor     (×2.0 losses at max moisture by default)
+      maxSpeedReduction (−35% speed cap at max moisture by default)
+      dryBonusFactor    (5% load/loss bonus when below target moisture)
+
+    PER-CROP THRESHOLDS  (USDA standard harvest moisture targets)
+      target = ideal harvest moisture % — penalties start above this
+      max    = practical ceiling % — factors are capped here
+    ════════════════════════════════════════════════════════════════════════════
+    -->
+    <moistureSettings
+        enableLoad="true"
+        enableLoss="true"
+        enableSpeed="true"
+        maxLoadFactor="1.30"
+        maxLossFactor="2.00"
+        maxSpeedReduction="0.35"
+        dryBonusFactor="0.05">
+
+        <!-- Small grains -->
+        <crop name="wheat"      target="13.5" max="20.0" />
+        <crop name="barley"     target="13.5" max="20.0" />
+        <crop name="oat"        target="13.0" max="18.0" />
+        <crop name="rye"        target="13.5" max="20.0" />
+        <crop name="spelt"      target="13.5" max="20.0" />
+        <crop name="triticale"  target="13.5" max="20.0" />
+        <crop name="millet"     target="13.5" max="20.0" />
+
+        <!-- Coarse grains -->
+        <crop name="corn"       target="15.5" max="28.0" />
+        <crop name="sorghum"    target="14.0" max="25.0" />
+
+        <!-- Oilseeds -->
+        <crop name="soybean"    target="13.0" max="18.0" />
+        <crop name="canola"     target="9.0"  max="16.0" />
+        <crop name="sunflower"  target="9.0"  max="15.0" />
+
+        <!-- Rice (harvested wet; dried post-field) -->
+        <crop name="rice"       target="20.0" max="28.0" />
+
+        <!-- Pulses -->
+        <crop name="pea"        target="13.0" max="18.0" />
+        <crop name="lentil"     target="13.0" max="18.0" />
+        <crop name="chickpea"   target="13.0" max="18.0" />
+
+        <!-- Specialty -->
+        <crop name="cotton"     target="8.0"  max="14.0" />
+
+    </moistureSettings>
+
     <!-- ── Grain crops ──────────────────────────────────────────────────── -->
 
     <crop name="wheat"

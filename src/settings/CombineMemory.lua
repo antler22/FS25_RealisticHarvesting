@@ -169,8 +169,10 @@ end
 --     AUTO режим додає невелике випадкове відхилення від оптимальних значень (тільки на сервері).
 --     Режим RESET (forceOptimal=false) встановлює всі параметри на нейтральні 50%.
 function CombineMemory:autoConfigureForCrop(cropName, forceOptimal)
+    print(string.format("RHM: [MEM] autoConfigureForCrop ENTER cropName=%s | forceOptimal=%s | prevMode=%s | machineType=%s",
+        tostring(cropName), tostring(forceOptimal), tostring(self.mode), tostring(self.machineType)))
     if not cropName then
-        if self.debug then print("RHM: [!] autoConfigureForCrop called with nil cropName, skipping") end
+        print("RHM: [MEM] autoConfigureForCrop EXIT — nil cropName")
         return false
     end
 
@@ -232,6 +234,12 @@ function CombineMemory:autoConfigureForCrop(cropName, forceOptimal)
     end
 
     self.currentCrop = cropName
+
+    local s = self.currentSettings or {}
+    print(string.format("RHM: [MEM] autoConfigureForCrop EXIT mode=%s | fan=%s rotor=%s upper=%s lower=%s concave=%s feeder=%s",
+        tostring(self.mode),
+        tostring(s.fan), tostring(s.rotor), tostring(s.upperSieve), tostring(s.lowerSieve),
+        tostring(s.concave), tostring(s.feeder)))
     return true
 end
 
@@ -280,31 +288,47 @@ end
 --     У мультиплеєрі (клієнт) надсилає CombineSettingsEvent з повним профілем.
 --     Повертає false якщо профіль відсутній.
 function CombineMemory:loadUserPreset()
-    if not self.currentCrop then return false end
+    print(string.format("RHM: [MEM] loadUserPreset ENTER | currentCrop=%s | pm=%s",
+        tostring(self.currentCrop),
+        tostring(g_realisticHarvestManager and g_realisticHarvestManager.profileManager ~= nil)))
+
+    if not self.currentCrop then
+        print("RHM: [MEM] loadUserPreset EXIT — no currentCrop")
+        return false
+    end
 
     local pm = g_realisticHarvestManager and g_realisticHarvestManager.profileManager
-    if not pm then return false end
+    if not pm then
+        print("RHM: [MEM] loadUserPreset EXIT — no ProfileManager")
+        return false
+    end
 
     local profile = pm:getProfile(self.currentCrop)
+    print(string.format("RHM: [MEM] loadUserPreset profile lookup for %s → %s",
+        tostring(self.currentCrop), tostring(profile ~= nil)))
     if profile then
-        if g_client and self.combine then
+        if g_client and not g_server and self.combine then
+            -- EN: True multiplayer client — send a full-profile event to the server for network sync.
+            --     The event format is limited to the params CombineSettingsEvent serialises;
+            --     for singleplayer we use the direct path below to avoid those limitations.
+            -- UA: Справжній мультиплеєр — відправляємо подію на сервер.
             local event = CombineSettingsEvent.new(self.combine, "", 0, true, profile)
-            if not g_server then
-                g_client:getServerConnection():sendEvent(event)
-            else
-                local conn = g_currentMission and g_currentMission.player and g_currentMission.player.serverConnection or nil
-                event:run(conn)
-            end
+            g_client:getServerConnection():sendEvent(event)
         else
-            -- EN: Dynamic application — iterate active params for this machine type so
-            --     forage (chopLength/kernelProcessor/blower) and root (shakingIntensity)
-            --     are handled without hardcoding every param name.
-            -- UA: Динамічне застосування — перебираємо активні параметри для типу машини.
+            -- EN: Singleplayer (g_server ~= nil) or dedicated-server execution.
+            --     Apply ALL params directly from the profile using the machine-type param list.
+            --     This avoids the CombineSettingsEvent hardcoded-6-param limitation and correctly
+            --     restores concave, forage params (chopLength/kernelProcessor/acceleratorGap),
+            --     root params (shakingIntensity), and any future additions.
+            -- UA: Синглплеєр або виконання на виділеному сервері.
+            --     Застосовуємо ВСІ параметри напряму, без обмежень мережевої події.
             local activeParams = CombineSettingsDatabase:getParamsForMachineType(self.machineType)
             for _, pName in ipairs(activeParams) do
                 if self.currentSettings[pName] ~= nil then
-                    -- EN: Fall back to legacy 'feeder' key for old saves that predate 'concave'.
-                    self.currentSettings[pName] = profile[pName] or profile.feeder or 50
+                    local val = profile[pName]
+                    -- EN: Legacy compat — old saves wrote "feeder" for what is now "concave".
+                    if val == nil and pName == "concave" then val = profile.feeder end
+                    self.currentSettings[pName] = val or 50
                 end
             end
             self.currentSettings.targetEngineLoad = profile.targetEngineLoad or 95
@@ -438,15 +462,23 @@ end
 -- EN: Sets a single parameter value (0-100) and switches to MANUAL mode.
 -- UA: Встановлює значення одного параметру (0-100) і перемикає в MANUAL режим.
 function CombineMemory:setParameter(paramName, value)
+    -- EN: DIAG — always log so we can see every parameter touch.
+    local prev = self.currentSettings and self.currentSettings[paramName]
     if self.currentSettings[paramName] ~= nil then
         if paramName == "targetEngineLoad" then
             self.currentSettings[paramName] = math.max(70, math.min(110, value))
+            print(string.format("RHM: [MEM] setParameter %s: %s -> %s (targetEngineLoad)",
+                tostring(paramName), tostring(prev), tostring(self.currentSettings[paramName])))
             return true
         end
         self.currentSettings[paramName] = math.max(0, math.min(100, value))
         self.mode = "MANUAL" -- EN: Any manual change overrides AUTO mode / UA: Будь-яка ручна зміна скасовує AUTO режим
+        print(string.format("RHM: [MEM] setParameter %s: %s -> %s | mode=MANUAL",
+            tostring(paramName), tostring(prev), tostring(self.currentSettings[paramName])))
         return true
     end
+    print(string.format("RHM: [MEM] setParameter REJECTED (%s not in currentSettings) | value=%s",
+        tostring(paramName), tostring(value)))
     return false
 end
 
@@ -534,11 +566,20 @@ end
 -- UA: Переключається на нову культуру: зберігає профіль поточної культури, встановлює нову,
 --     а потім завантажує її профіль або застосовує авто/стандартні налаштування залежно від режиму.
 function CombineMemory:switchCrop(newCropName)
+    -- EN: DIAG — loud print so we can see every time switchCrop is called and with what context.
+    --     The #1 suspect when loaded settings appear to reset is an unwanted switchCrop firing
+    --     right after onPostLoad (e.g. crop auto-detect kicking in on spawn).
+    print(string.format("RHM: [MEM] switchCrop ENTER newCrop=%s | prevCrop=%s | mode=%s | autoSwitch=%s | tier=%s",
+        tostring(newCropName), tostring(self.currentCrop), tostring(self.mode),
+        tostring(self.autoSwitchEnabled), tostring(self.upgradeLevel)))
+
     if not newCropName or newCropName == self.currentCrop then
+        print(string.format("RHM: [MEM] switchCrop EXIT early (no change) newCrop=%s", tostring(newCropName)))
         return
     end
 
     if self.currentCrop then
+        print(string.format("RHM: [MEM] switchCrop saving profile for old crop=%s", tostring(self.currentCrop)))
         self:saveCurrentProfile(self.currentCrop)
     end
 
@@ -546,20 +587,27 @@ function CombineMemory:switchCrop(newCropName)
 
     local pm = g_realisticHarvestManager and g_realisticHarvestManager.profileManager
     if pm and pm:getProfile(newCropName) then
-        if self.debug then print(string.format("RHM: Switching to crop %s - Loading global profile", newCropName)) end
+        print(string.format("RHM: [MEM] switchCrop — existing profile found for %s, calling loadUserPreset()", newCropName))
         self:loadUserPreset()
     else
-        if self.debug then print(string.format("RHM: Switching to crop %s - No profile, applying defaults", newCropName)) end
         -- EN: Auto-apply optimal settings only if Auto Pilot upgrade (tier 4) is installed.
         --     Lower tiers keep 50% neutral defaults — player must set manually.
         -- UA: Автоматичне застосування оптимальних налаштувань тільки з апгрейдом Автопілот (рівень 4).
         local hasAutoPilot = (self.upgradeLevel or 0) >= 4
         if self.autoSwitchEnabled and hasAutoPilot then
+            print(string.format("RHM: [MEM] switchCrop — no profile, AUTO PILOT active → autoConfigureForCrop(%s, true)", newCropName))
             self:autoConfigureForCrop(newCropName, true)
         else
+            print(string.format("RHM: [MEM] switchCrop — no profile, applying BASELINE defaults for %s (hasAutoPilot=%s, autoSwitch=%s)",
+                newCropName, tostring(hasAutoPilot), tostring(self.autoSwitchEnabled)))
             self:autoConfigureForCrop(newCropName, false)
         end
     end
+
+    local s = self.currentSettings or {}
+    print(string.format("RHM: [MEM] switchCrop EXIT currentCrop=%s | fan=%s rotor=%s upper=%s lower=%s concave=%s",
+        tostring(self.currentCrop),
+        tostring(s.fan), tostring(s.rotor), tostring(s.upperSieve), tostring(s.lowerSieve), tostring(s.concave)))
 end
 
 -- ============================================================================
@@ -577,6 +625,22 @@ function CombineMemory:updateSetting(param, value)
         if param ~= "targetEngineLoad" then
             self.autoSwitchEnabled = false
             self.mode = "MANUAL"
+        end
+
+        -- EN: Persist the updated setting to the crop profile so the player never loses
+        --     manually-configured values even if they exit without a crop switch.
+        --     Debounced to at most one disk write per second — the scroll wheel and slider drag
+        --     can fire updateSetting many times per second; we mark dirty and let the clock gate.
+        --     Only saves when a crop is active — avoids creating a phantom "nil" profile entry.
+        -- UA: Зберігаємо оновлене налаштування у профіль культури (з дебаунсом 1с).
+        if self.currentCrop then
+            local now = g_currentMission and g_currentMission.time or 0
+            self._profileDirty = true
+            if not self._lastProfileSaveTime or (now - self._lastProfileSaveTime) >= 1000 then
+                self._lastProfileSaveTime = now
+                self._profileDirty = false
+                self:saveCurrentProfile(self.currentCrop)
+            end
         end
 
         if g_client and self.combine then

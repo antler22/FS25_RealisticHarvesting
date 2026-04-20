@@ -11,6 +11,12 @@
 rhm_Combine = {}
 rhm_Combine.debug = false
 
+-- EN: Capture mod name at file-load time, while g_currentModName is still valid.
+--     By the time vehicle lifecycle events (onLoad, onPostLoad, etc.) fire, g_currentModName
+--     is nil or belongs to a different mod — using this captured value is the only safe approach.
+-- UA: Зберігаємо назву моду під час завантаження файлу, поки g_currentModName ще дійсний.
+local RHM_MOD_NAME = g_currentModName or "FS25_RealisticHarvesting"
+
 -- EN: Checks if the vehicle has the base Combine specialization.
 --     Returns true for all machines including modular systems like NEXAT.
 -- UA: Перевіряє чи транспортний засіб має базову спеціалізацію Combine.
@@ -54,6 +60,34 @@ function rhm_Combine.registerOverwrittenFunctions(vehicleType)
     SpecializationUtil.registerOverwrittenFunction(vehicleType, "getCanBeTurnedOn", rhm_Combine.getCanBeTurnedOn)
 end
 
+-- EN: Canonical FS25 specialization lifecycle hook. Called by SpecializationManager:initSpecializations()
+--     AFTER Vehicle.xmlSchemaSavegame has been created (Vehicle.init runs first). This is THE
+--     correct place to register savegame XML schema paths — it's what every base-game spec does
+--     (see Combine.initSpecialization in scripts/vehicles/specializations/Combine.lua, which
+--     registers "vehicles.vehicle(?).combine#isSwathActive" etc. at this hook).
+--
+--     Previously we tried to register schema in registerEventListeners (too early — schema is nil)
+--     and fell back to a deferred registration in onLoad (works but fragile). This is the canonical
+--     time and removes timing questions entirely.
+--
+--     We still keep the onLoad fallback as a defensive net in case this hook is skipped for any
+--     reason (e.g. hot-reload path that bypasses initSpecializations).
+-- UA: Канонічний хук життєвого циклу спеціалізації FS25. Викликається SpecializationManager:initSpecializations()
+--     ПІСЛЯ створення Vehicle.xmlSchemaSavegame. Це правильне місце для реєстрації шляхів XML
+--     збереження — так роблять всі базові спеціалізації (див. Combine.initSpecialization).
+function rhm_Combine.initSpecialization()
+    print("RHM: [INIT] rhm_Combine.initSpecialization() fired")
+    if Vehicle and Vehicle.xmlSchemaSavegame then
+        local basePath = string.format("vehicles.vehicle(?).%s.rhm_Combine", RHM_MOD_NAME)
+        rhm_Combine.registerXMLPaths(Vehicle.xmlSchemaSavegame, basePath)
+        rhm_Combine._schemaRegistered = true
+        print(string.format("RHM: [INIT] Savegame XML schema registered at canonical hook | basePath=%s", basePath))
+    else
+        print(string.format("RHM: [INIT] WARNING — Vehicle.xmlSchemaSavegame still nil in initSpecialization | Vehicle=%s",
+            tostring(Vehicle ~= nil)))
+    end
+end
+
 -- EN: Registers XML paths for vehicle config (shop/modDesc XML). Persists combine settings per-vehicle.
 -- UA: Реєструє шляхи XML для конфігурації засобу (XML магазину/modDesc). Зберігає налаштування комбайна для кожного засобу.
 function rhm_Combine.registerXMLPaths(schema, basePath)
@@ -67,7 +101,8 @@ function rhm_Combine.registerXMLPaths(schema, basePath)
     schema:register(XMLValueType.INT,    cur .. "#rotor",        "Rotor", 50)
     schema:register(XMLValueType.INT,    cur .. "#concave",      "Concave gap (grain) / Feed roll (others)", 50)
     schema:register(XMLValueType.INT,    cur .. "#feeder",       "Feeder (legacy / forage+root+cotton)", 50)
-    schema:register(XMLValueType.INT,    cur .. "#upgradeLevel", "Upgrade tier (0-4)", 0)
+    schema:register(XMLValueType.INT,    cur .. "#upgradeLevel",       "Upgrade tier (0-4)", 0)
+    schema:register(XMLValueType.INT,    cur .. "#targetEngineLoad",   "Target engine load % (0-100)", 95)
 end
 
 -- EN: Mirrors registerXMLPaths for the savegame vehicles.xml schema.
@@ -91,36 +126,43 @@ function rhm_Combine.registerEventListeners(vehicleType)
     SpecializationUtil.registerEventListener(vehicleType, "onLoad", rhm_Combine)
     SpecializationUtil.registerEventListener(vehicleType, "onUpdateTick", rhm_Combine)
     SpecializationUtil.registerEventListener(vehicleType, "onDraw", rhm_Combine)
-    
+
     -- SAVEGAME: Збереження та завантаження стану
     SpecializationUtil.registerEventListener(vehicleType, "onReadStream", rhm_Combine)
     SpecializationUtil.registerEventListener(vehicleType, "onWriteStream", rhm_Combine)
-    
-    -- SAVEGAME XML: Enabled
-    SpecializationUtil.registerEventListener(vehicleType, "saveToXMLFile", rhm_Combine)
-    SpecializationUtil.registerEventListener(vehicleType, "loadFromXMLFile", rhm_Combine)
-    
+
+    -- SAVEGAME XML:
+    -- EN: saveToXMLFile is called DIRECTLY per-spec by Vehicle:saveToXMLFile (not through the event
+    --     system). Registering it as an event listener would cause a second call with wrong arguments.
+    --     We do NOT register it here — the function is picked up automatically because it exists on
+    --     the rhm_Combine class table and Vehicle.lua checks v191_.saveToXMLFile ~= nil.
+    -- EN: onPostLoad IS a proper spec event — register normally.
+    -- UA: saveToXMLFile викликається напряму з Vehicle:saveToXMLFile, НЕ через систему подій.
+    --     onPostLoad — справжня подія спеціалізації.
+    SpecializationUtil.registerEventListener(vehicleType, "onPostLoad", rhm_Combine)
+
     -- MULTIPLAYER: Синхронізація даних між сервером і клієнтом
     SpecializationUtil.registerEventListener(vehicleType, "onReadUpdateStream", rhm_Combine)
     SpecializationUtil.registerEventListener(vehicleType, "onWriteUpdateStream", rhm_Combine)
-    
+
     -- INPUT: Реєструємо події введення
     SpecializationUtil.registerEventListener(vehicleType, "onRegisterActionEvents", rhm_Combine)
-    
-    -- CRITICAL FIX: явна реєстрація схеми savegame_vehicles для програмно доданих спеціалізацій
+
+    -- EN: Register savegame XML schema paths for our spec. FS25 only auto-registers schema paths
+    --     for configuration item classes; programmatically-added specializations like ours must do
+    --     this manually via Vehicle.xmlSchemaSavegame.
+    -- UA: Реєструємо шляхи XML схеми збереження для нашої спец. FS25 робить це автоматично тільки
+    --     для класів конфігурації; програмно додані спеціалізації мають зробити це вручну.
     if Vehicle and Vehicle.xmlSchemaSavegame then
-        local modName = g_currentModName 
-            or (g_realisticHarvestManager and g_realisticHarvestManager.modName)
-            or "FS25_RealisticHarvesting"
-        
-        -- EN: Registration path must match the game's internal structure: vehicles.vehicle(?).MODNAME.rhm_Combine
-        -- UA: Шлях реєстрації має відповідати структурі гри: vehicles.vehicle(?).MODNAME.rhm_Combine
-        local basePath = string.format("vehicles.vehicle(?).%s.rhm_Combine", modName)
+        -- EN: Use module-level RHM_MOD_NAME — g_currentModName unreliable at validateTypes time.
+        -- UA: Використовуємо RHM_MOD_NAME — g_currentModName ненадійний під час validateTypes.
+        local basePath = string.format("vehicles.vehicle(?).%s.rhm_Combine", RHM_MOD_NAME)
         rhm_Combine.registerXMLPaths(Vehicle.xmlSchemaSavegame, basePath)
-        
-        if rhm_Combine.debug then
-            print(string.format("RHM: Registered savegame XML schema paths via Vehicle.xmlSchemaSavegame (basePath: %s)", basePath))
-        end
+        print(string.format("RHM: [SCHEMA-DIAG] Registered savegame XML schema paths | basePath=%s", basePath))
+    else
+        print(string.format("RHM: [SCHEMA-DIAG] WARNING - Vehicle.xmlSchemaSavegame is %s | Vehicle=%s",
+            tostring(Vehicle and Vehicle.xmlSchemaSavegame),
+            tostring(Vehicle ~= nil)))
     end
 end
 
@@ -206,22 +248,38 @@ end
 --     LoadCalculator, визначення типу машини, CombineMemory, таблиця даних HUD, прапорці "dirty",
 --     і тротлінг мережі. Завантажує налаштування з XML якщо існує збереження.
 function rhm_Combine:onLoad(savegame)
-    -- Створюємо spec для нашого моду
-    -- НЕ хардкодимо назву моду: при перейменуванні папки/моду specName зміниться
-    local modName = g_currentModName 
-        or (g_realisticHarvestManager and g_realisticHarvestManager.modName)
-        or "FS25_RealisticHarvesting"
+    -- EN: Deferred savegame schema registration.
+    --     Vehicle.xmlSchemaSavegame is nil during registerEventListeners (too early), but IS
+    --     available by the time onLoad fires. Schema validation is lazy (per-getValue call),
+    --     so registering here — before onPostLoad's getValue calls — is sufficient.
+    --     The class-level flag ensures we only do this once regardless of how many combines load.
+    -- UA: Відкладена реєстрація схеми збереження.
+    --     Vehicle.xmlSchemaSavegame є nil під час registerEventListeners, але доступний до onLoad.
+    if not rhm_Combine._schemaRegistered then
+        if Vehicle and Vehicle.xmlSchemaSavegame then
+            local basePath = string.format("vehicles.vehicle(?).%s.rhm_Combine", RHM_MOD_NAME)
+            rhm_Combine.registerXMLPaths(Vehicle.xmlSchemaSavegame, basePath)
+            rhm_Combine._schemaRegistered = true
+            print(string.format("RHM: [SCHEMA] Savegame XML schema registered (deferred to onLoad) | basePath=%s", basePath))
+        else
+            Logging.warning("[RHM] Vehicle.xmlSchemaSavegame is still nil in onLoad — savegame persistence unavailable")
+        end
+    end
+
+    -- EN: Use the module-level captured mod name (safe at event-call time).
+    -- UA: Використовуємо захоплену назву моду рівня модуля (безпечна під час подій).
+    local modName = RHM_MOD_NAME
     local specName = string.format("spec_%s.rhm_Combine", modName)
-    
+
     self.spec_rhm_Combine = self[specName]
     local spec = self.spec_rhm_Combine
-    
+
     if not spec then
-        Logging.error("RHM: Failed to initialize spec for combine: %s (specName: %s)", 
+        Logging.error("RHM: Failed to initialize spec for combine: %s (specName: %s)",
             tostring(self:getFullName()), tostring(specName))
         return
     end
-    
+
     -- Синхронізація дебаг-прапорця з основним менеджером
     rhm_Combine.debug = RHM_Debug.isEnabled("Combine")
     
@@ -335,7 +393,7 @@ function rhm_Combine:onLoad(savegame)
 
     -- EN: For vehicles newly purchased from the store: read the selected rhm_upgradeTier
     --     configuration index and apply it as the starting upgrade level.
-    --     (For vehicles loaded from savegame, loadFromXMLFile takes MAX of XML and store values.)
+    --     (For vehicles loaded from savegame, onPostLoad takes MAX of XML and store values.)
     -- UA: Для нових транспортних засобів, куплених у магазині: зчитуємо вибраний індекс
     --     конфігурації rhm_upgradeTier і встановлюємо його як початковий рівень апгрейду.
     if RHMShopIntegration then
@@ -364,8 +422,9 @@ function rhm_Combine:onLoad(savegame)
         recommendedSpeed = 0,  -- EN: Updated by server tick, synced to clients / UA: Оновлюється сервером, синхронізується на клієнти
         overloadLevel = 0,     -- EN: 0=normal, 1=HIGH (120%+), 2=CRITICAL (150%+) — synced for warning display / UA: 0=норма, 1=ВИСОКЕ (120%+), 2=КРИТИЧНЕ (150%+)
         isPlugged = false,     -- EN: True when rotor plug is active / UA: True коли активне засмічення ротора
-        moistureLabel = "",    -- EN: Short label for current moisture condition / UA: Коротка мітка поточного стану вологості
-        grainMoisture = 0,     -- EN: Grain moisture % from external 'Moisture System' mod (0 = mod absent or not harvesting) / UA: Вологість зерна з зовнішнього моду (0 = мод відсутній або не косимо)
+        moistureLabel = "",    -- EN: Short label for current moisture condition (legacy — not drawn anymore) / UA: Коротка мітка поточного стану вологості (застаріле)
+        grainMoisture = 13.0,  -- EN: Grain moisture % — always shown on HUD. External Moisture System mod overrides; otherwise derived from time of day. / UA: Вологість зерна у % — завжди на HUD. Зовнішній мод перекриває; інакше — похідне від часу доби.
+        moistureSource = "time-of-day",  -- EN: "external" = from Moisture System mod, "time-of-day" = our own computation / UA: Джерело
         plugTimerPct = 0,      -- EN: 0-100% progress toward plug (for HUD warning ramp-up) / UA: 0-100% прогрес до засмічення
     }
 
@@ -418,10 +477,17 @@ function rhm_Combine:addFillUnitFillLevel(superFunc, ...)
     
     local spec = self.spec_rhm_Combine
     if spec and actualAdded and type(actualAdded) == "number" and actualAdded > 0 then
-        -- Рахуємо тільки якщо ми активно косимо (lastRawArea > 0)
-        if spec.lastRawArea and spec.lastRawArea > 0 then
+        -- EN: Count liters only when the cutter is actively cutting (totalCumulativeArea is growing).
+        --     This filters out non-harvest fill changes (offloading, sync corrections, transfers).
+        --     BUG FIX: the old guard (spec.lastRawArea > 0) always evaluated to false because
+        --     lastRawArea was never assigned after the area tracking refactor. This caused
+        --     lastLiters to be permanently 0, forcing the mod to use the less accurate
+        --     _fallbackLiters from addCutterArea (pre-loss gross liters instead of net hopper liters).
+        -- UA: Рахуємо літри тільки коли жатка активно ріже (totalCumulativeArea зростає).
+        local isCutting = (spec.totalCumulativeArea or 0) > (spec.prevCumulativeArea or 0)
+        if isCutting then
             spec.lastLiters = (spec.lastLiters or 0) + actualAdded
-            
+
             local farmId, fillUnitIndex, fillLevelDelta, fillTypeIndex, toolType, fillPositionData = ...
             if fillTypeIndex and fillTypeIndex ~= FillType.UNKNOWN then
                  spec.lastFillType = fillTypeIndex
@@ -996,7 +1062,15 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
     if not spec or not spec.loadCalculator then
         return
     end
-    
+
+    -- EN: Tick the time-of-day moisture update BEFORE any early-return paths so the
+    --     HUD's moistureLabel / moisturePercent are refreshed even when the cutter is
+    --     off, reversing, or idle. The updater is 60-second throttled internally so
+    --     this costs next-to-nothing per tick.
+    -- UA: Оновлюємо вологість часу доби до будь-яких ранніх виходів, щоб HUD мав свіжі
+    --     moistureLabel/moisturePercent навіть коли жатка вимкнена.
+    spec.loadCalculator:updateMoistureFactor(dt)
+
     -- EN: Check if combine thresher is on and driving forward; reset load if not.
     -- UA: Перевіряємо чи молотарка увімкнена і рухається вперед; скидаємо навантаження якщо ні.
     if not self:getIsTurnedOn() or self.movingDirection == -1 then
@@ -1005,6 +1079,13 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
         spec.loadCalculator:reset()
         if spec.data then
             spec.data.load = 0
+            -- EN: Keep moisture fields populated from time-of-day so the HUD row stays visible
+            --     even when the thresher is off / reversing (the updater ticked just above).
+            -- UA: Тримаємо поля вологості заповненими навіть коли молотарка вимкнена.
+            local lcOff = spec.loadCalculator
+            spec.data.grainMoisture  = (lcOff and lcOff.moisturePercent) or 13.0
+            spec.data.moistureLabel  = (lcOff and lcOff.moistureLabel) or ""
+            spec.data.moistureSource = "time-of-day"
         end
         spec.isSpeedLimitActive = false
         return
@@ -1055,7 +1136,15 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
             spec.data.litersPerHour = 0
             spec.data.yield = 0
             spec.data.recommendedSpeed = 0
-            spec.data.grainMoisture = 0
+            -- EN: Keep moisture fields populated from time-of-day even when idle so the HUD
+            --     row renders a plant-material label (and grain % if external mod is active).
+            --     moistureSource is forced to "time-of-day" while idle because the external
+            --     mod's live-field query requires the cutter to be on.
+            -- UA: Тримаємо поля вологості заповненими навіть в режимі простою.
+            local lcIdle = spec.loadCalculator
+            spec.data.grainMoisture  = (lcIdle and lcIdle.moisturePercent) or 13.0
+            spec.data.moistureLabel  = (lcIdle and lcIdle.moistureLabel) or ""
+            spec.data.moistureSource = "time-of-day"
         end
         spec.isSpeedLimitActive = false
 
@@ -1083,80 +1172,126 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
     end
     
     if liters > 0 then
-        if spec.lastFillType and g_fillTypeManager then
+        -- EN: Use our real-world density table (UnitConverter) rather than FS25's internal
+        --     fillType.massPerLiter, which is incorrect for at least sorghum (~3× too dense),
+        --     causing yield and engine load to read ~3× too high for that crop.
+        --     Falls back to the FS25 value only for fill types not in our table (e.g. custom mods),
+        --     and finally to a generic 0.75 kg/L if neither source is available.
+        -- UA: Використовуємо нашу таблицю реальних густин замість внутрішнього massPerLiter FS25,
+        --     який некоректний для деяких культур (зокрема сорго — ~3× завищено), що призводить
+        --     до надмірно завищеної врожайності та навантаження двигуна для цих культур.
+        local density = UnitConverter and UnitConverter.getCropDensityKgL
+                        and UnitConverter.getCropDensityKgL(spec.lastFillType)
+        if density then
+            massKg = liters * density
+            -- EN: One-time diagnostic per fill type — confirms the density table is hit and
+            --     shows what density value is used (0.721 for SORGHUM is the correct fix).
+            -- UA: Одноразова діагностика на тип заповнення — підтверджує що таблиця щільності
+            --     використовується і показує значення (0.721 для SORGHUM — правильне виправлення).
+            if not spec._densityDiagLogged then
+                spec._densityDiagLogged = {}
+            end
+            if not spec._densityDiagLogged[spec.lastFillType] then
+                spec._densityDiagLogged[spec.lastFillType] = true
+                local ftName = "?"
+                if g_fillTypeManager then
+                    local ft = g_fillTypeManager:getFillTypeByIndex(spec.lastFillType)
+                    if ft then ftName = ft.name or "?" end
+                end
+                print(string.format("RHM: [DENSITY-DIAG] First use: fillType=%d (%s) density=%.4f kg/L (table hit)",
+                    spec.lastFillType, ftName, density))
+            end
+        elseif spec.lastFillType and g_fillTypeManager then
+            -- EN: Fallback: FS25 fill type density (rarely reached once table is populated).
+            -- UA: Запасний варіант: густина FS25 (рідко досягається після ініціалізації таблиці).
             local fillType = g_fillTypeManager:getFillTypeByIndex(spec.lastFillType)
             if fillType and fillType.massPerLiter then
-                -- EN: IMPORTANT: massPerLiter in FS25 is stored in TONS per liter, so multiply by 1000 to get kg.
-                -- UA: ВАЖЛИВО: massPerLiter в FS25 зберігається в ТОННАХ на літр, тому множимо на 1000 щоб отримати кг.
+                -- EN: FS25 stores massPerLiter as: XML_kg_per_L × 0.001 (see FillTypeDesc.lua).
+                --     Multiplying by 1000 recovers the actual kg/L density for the mass calculation.
+                --     Example: wheat stored as 0.000772 → × 1000 = 0.772 kg/L (correct).
+                -- UA: FS25 зберігає massPerLiter як: XML_кг_на_л × 0.001 (FillTypeDesc.lua).
+                --     Множення на 1000 відновлює реальну густину кг/л для розрахунку маси.
                 massKg = liters * fillType.massPerLiter * 1000
+                -- EN: One-time fallback diagnostic — warns that this crop isn't in our table.
+                if not spec._densityDiagLogged then spec._densityDiagLogged = {} end
+                if not spec._densityDiagLogged[spec.lastFillType] then
+                    spec._densityDiagLogged[spec.lastFillType] = true
+                    print(string.format("RHM: [DENSITY-DIAG] FALLBACK: fillType=%d density=%.4f kg/L (FS25 massPerLiter=%.6f) - not in RHM density table",
+                        spec.lastFillType, fillType.massPerLiter * 1000, fillType.massPerLiter))
+                end
             else
-                massKg = liters * 0.75 -- EN: Fallback density / UA: Запасна густота
+                massKg = liters * 0.75
             end
         else
-            massKg = liters * 0.75 -- EN: Fallback density / UA: Запасна густота
+            massKg = liters * 0.75
         end
     end
     
     -- EN: Per-tick area — delta of the monotonic cumulative counter since last tick.
-    --     This is timing-safe: addCutterArea fires on the header vehicle (a child of the combine),
-    --     which FS25 updates AFTER the combine. Using a delta means we always read area that
-    --     was cut between the last two onUpdateTick calls, regardless of order.
+    --     Used for the isCutting guard and engine load calculations, NOT for yield display.
     -- UA: Площа за тік — різниця монотонного лічильника з минулого тіку.
     local prevArea     = spec.prevCumulativeArea or 0
-    local areaForYield = (spec.totalCumulativeArea or 0) - prevArea
+    local pixelAreaDelta = (spec.totalCumulativeArea or 0) - prevArea
     spec.prevCumulativeArea = spec.totalCumulativeArea or 0
 
-    -- EN: Area fallback — forage cutters and windrow pickups call addCutterArea with area=0
-    --     (forage: no fruit-pixel tracking; pickup: collects windrow objects not pixels).
-    --     Reconstruct area from distance × cutting width so yield (t/ha) stays non-zero.
-    --     Priority: 1. swathWidth (windrow pickup override), 2. cached width, 3. attached cutter probes.
-    --     Width is cached after first successful detection to avoid per-tick cutter iteration.
-    -- UA: Запасне рішення для форажних і підбирачів — area=0, тому обчислюємо з відстані × ширина.
-    if areaForYield <= 0 and massKg > 0 then
-        local cutWidth = spec.combineMemory and spec.combineMemory.swathWidth
-        if not cutWidth or cutWidth <= 0 then
-            -- EN: Use cached width from previous detection if available.
-            -- UA: Використовуємо кешовану ширину з попередньої детекції, якщо є.
-            cutWidth = spec._cachedForageCutWidth
-        end
-        if not cutWidth or cutWidth <= 0 then
-            -- EN: Probe attached cutter for its working width.
-            --     spec_cutter.workWidth is the most reliable source for forage direct-cut headers.
-            --     workAreas[1].workWidth is often 0 for forage cutters in FS25 — checked last.
-            -- UA: Знаходимо ширину підключеної жатки.
-            local sc = self.spec_combine
-            if sc and sc.attachedCutters then
-                for c, _ in pairs(sc.attachedCutters) do
-                    if c.spec_cutter and (c.spec_cutter.workWidth or 0) > 0 then
-                        cutWidth = c.spec_cutter.workWidth
-                    end
-                    if (not cutWidth or cutWidth <= 0) and type(c.getWorkAreaWidth) == "function" then
-                        cutWidth = c:getWorkAreaWidth(1) or 0
-                    end
-                    if not cutWidth or cutWidth <= 0 then
-                        local wa = c.spec_workArea
-                        if wa and wa.workAreas and wa.workAreas[1] then
-                            cutWidth = wa.workAreas[1].workWidth or 0
+    -- EN: Area for yield calculation — pixel area is the primary source.
+    --     spec.totalCumulativeArea delta (pixelAreaDelta) is the true m² of terrain cleared by the
+    --     cutter each tick, independent of header geometry. This removes the 3-10× yield inflation
+    --     caused by spec_cutter.workWidth returning a single-row width for row-crop corn/sorghum
+    --     headers instead of the full working width.
+    --     FALLBACK: geometric area (dist × _cachedCutWidth) for windrow/pickup scenarios where
+    --     addCutterArea is not triggered but grain is still accumulated.
+    --     spec._cachedCutWidth is still populated here for the DraggableHUD ac/hr display.
+    -- UA: Площа для розрахунку врожайності — піксельна площа є основним джерелом.
+    --     Delta spec.totalCumulativeArea (pixelAreaDelta) — реальна m² ґрунту за тік, незалежна
+    --     від геометрії жатки. Усуває 3-10× інфляцію від spec_cutter.workWidth для кукурудзяних
+    --     жаток рядкового типу (повертає ширину одного рядка замість повної ширини жатки).
+    local areaForYield = 0
+    if massKg > 0 or pixelAreaDelta > 0 then
+        -- EN: Probe/cache cutter width for the DraggableHUD ac/hr display.
+        --     Only updated once (when not yet cached) to avoid per-tick cutter iteration.
+        -- UA: Зондуємо/кешуємо ширину жатки для відображення га/год у HUD.
+        if not spec._cachedCutWidth or spec._cachedCutWidth <= 0 then
+            local swathW = spec.combineMemory and spec.combineMemory.swathWidth
+            if swathW and swathW > 0 then
+                spec._cachedCutWidth = swathW
+            else
+                local sc = self.spec_combine
+                if sc and sc.attachedCutters then
+                    for c, _ in pairs(sc.attachedCutters) do
+                        local cw = 0
+                        if c.spec_cutter and (c.spec_cutter.workWidth or 0) > 0 then
+                            cw = c.spec_cutter.workWidth
+                        elseif type(c.getWorkAreaWidth) == "function" then
+                            cw = c:getWorkAreaWidth(1) or 0
+                        elseif c.spec_workArea and c.spec_workArea.workAreas
+                               and c.spec_workArea.workAreas[1] then
+                            cw = c.spec_workArea.workAreas[1].workWidth or 0
+                        end
+                        if cw > 0 then
+                            spec._cachedCutWidth = cw
+                            break
                         end
                     end
-                    if cutWidth and cutWidth > 0 then break end
                 end
             end
-            if cutWidth and cutWidth > 0 then
-                spec._cachedForageCutWidth = cutWidth  -- EN: cache to skip detection next tick
-            end
         end
-        if cutWidth and cutWidth > 0 then
-            -- EN: lastMovedDistance is FS25's per-tick distance (meters). At 4 mph ≈ 0.4 m/tick.
-            -- UA: lastMovedDistance — відстань за тік у метрах.
+
+        -- EN: PRIMARY: pixel area — actual m² of terrain cleared this tick by addCutterArea callbacks.
+        -- UA: PRIMARY: піксельна площа — реальні m² ґрунту за тік від зворотних викликів addCutterArea.
+        if pixelAreaDelta > 0 then
+            areaForYield = pixelAreaDelta
+        elseif spec._cachedCutWidth and spec._cachedCutWidth > 0 then
+            -- EN: FALLBACK: geometric area when no cutter pixels detected (e.g. windrow pickup header).
+            -- UA: FALLBACK: геометрична площа коли піксели жатки не виявлені (наприклад, підбирач).
             local dist = self.lastMovedDistance or 0
-            areaForYield = dist * cutWidth
+            areaForYield = dist * spec._cachedCutWidth
         end
     end
     
-    -- EN: Update time-of-day moisture factor (cached, cheap call).
-    -- UA: Оновлюємо коефіцієнт вологості часу доби (кешується, дешевий виклик).
-    spec.loadCalculator:updateMoistureFactor(dt)
+    -- EN: Time-of-day moisture factor is now updated at the very top of onUpdateTick
+    --     (before any early-return paths), so the HUD always has fresh values.
+    -- UA: Коефіцієнт вологості часу доби тепер оновлюється на початку onUpdateTick.
 
     -- EN: Pass accumulated MASS to LoadCalculator (not area) — mass is the main driver now.
     -- UA: Передаємо накопичену МАСУ в LoadCalculator (не площу) — маса тепер основний показник.
@@ -1239,21 +1374,48 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
     spec.lastLiters = 0
     spec._fallbackLiters = 0
     
-    -- EN: Read grain moisture from external 'Moisture System' mod (if installed and enabled).
-    --     Try object-level moisture first (most accurate), fall back to world-position query.
-    -- UA: Зчитуємо вологість зерна з зовнішнього моду (якщо встановлений і увімкнений).
+    -- EN: Read field moisture from external 'Moisture System' mod (if installed and enabled).
+    --     Field position is the primary source — this reflects the moisture of the standing
+    --     crop being cut, which is what affects threshing difficulty and grain losses.
+    --     Grain-tank moisture (getObjectMoisture) is intentionally omitted here because the
+    --     MoistureSystem mod already displays it in the fillUnit UI, and it represents the
+    --     average of already-harvested grain, not the live field condition.
+    -- UA: Зчитуємо вологість поля з зовнішнього моду (якщо встановлений і увімкнений).
+    --     Позиція поля — основне джерело: відображає вологість стоячої культури, яку ріжемо.
     local grainMoisture = 0
     if MoistureAdapter and MoistureAdapter.isActive
        and g_realisticHarvestManager and g_realisticHarvestManager.settings
        and g_realisticHarvestManager.settings.enableMoisture
        and cutterIsTurnedOn then
-        local fillType = spec_combine.lastValidInputFruitType or FillType.UNKNOWN
-        if fillType ~= FillType.UNKNOWN then
-            grainMoisture = MoistureAdapter.getObjectMoisture(self.components[1].node, fillType)
-        end
+        local mx, _, mz = getWorldTranslation(self.components[1].node)
+        grainMoisture = MoistureAdapter.getMoistureAtPosition(mx, mz)
+        -- EN: Fallback: object-level moisture if position query returns nothing.
+        -- UA: Запасний варіант: вологість об'єкта якщо позиційний запит нічого не повернув.
         if grainMoisture == 0 then
-            local mx, _, mz = getWorldTranslation(self.components[1].node)
-            grainMoisture = MoistureAdapter.getMoistureAtPosition(mx, mz)
+            local fillType = spec_combine.lastValidInputFruitType or FillType.UNKNOWN
+            if fillType ~= FillType.UNKNOWN then
+                grainMoisture = MoistureAdapter.getObjectMoisture(self.components[1].node, fillType)
+            end
+        end
+    end
+
+    -- EN: Cache per-effect moisture factors on the LoadCalculator so calculateEngineLoad(),
+    --     calculateTotalCropLoss(), and calculateSpeedLimit() can use them without re-querying
+    --     the moisture API every tick. Factors update every tick alongside the moisture read.
+    --     One-tick lag on factor changes is imperceptible at normal game speeds.
+    -- UA: Кешуємо коефіцієнти вологості на LoadCalculator для використання в розрахунках.
+    local lc = spec.loadCalculator
+    if lc then
+        lc.grainMoisture = grainMoisture
+        if MoistureCalculator and grainMoisture > 0 then
+            local cropName = spec.combineMemory and spec.combineMemory.currentCrop
+            lc.moistureLoadFactor  = MoistureCalculator.enableLoad  and MoistureCalculator.getLoadFactor(cropName, grainMoisture)  or 1.0
+            lc.moistureLossFactor  = MoistureCalculator.enableLoss  and MoistureCalculator.getLossFactor(cropName, grainMoisture)  or 1.0
+            lc.moistureSpeedFactor = MoistureCalculator.enableSpeed and MoistureCalculator.getSpeedFactor(cropName, grainMoisture) or 1.0
+        else
+            lc.moistureLoadFactor  = 1.0
+            lc.moistureLossFactor  = 1.0
+            lc.moistureSpeedFactor = 1.0
         end
     end
 
@@ -1271,7 +1433,21 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
         spec.data.yield            = lc.currentYield or 0
         spec.data.isPlugged        = lc.isPlugged or false
         spec.data.moistureLabel    = lc.moistureLabel or ""
-        spec.data.grainMoisture    = grainMoisture or 0
+        -- EN: Grain moisture display — always a percentage, regardless of external mod or upgrade tier.
+        --     Real-life combines always have a moisture meter, so ours does too. Priority:
+        --       1. External Moisture System mod (if active AND returned >0 for live field/object)
+        --       2. LoadCalculator.moisturePercent (time-of-day derived: Optimal~13%, Night Dew~24%)
+        -- UA: Відображення вологості зерна — завжди у відсотках, незалежно від модів і апгрейдів.
+        --     Реальні комбайни завжди мають вологомір, отже і наш має. Пріоритет:
+        --       1. Зовнішній мод Moisture System (якщо активний і повернув >0)
+        --       2. LoadCalculator.moisturePercent (похідне від часу доби)
+        if grainMoisture and grainMoisture > 0 then
+            spec.data.grainMoisture = grainMoisture
+            spec.data.moistureSource = "external"  -- EN: Provenance tag for debugging / UA: Джерело для діагностики
+        else
+            spec.data.grainMoisture = lc.moisturePercent or 13.0
+            spec.data.moistureSource = "time-of-day"
+        end
         -- EN: plugTimerPct: 0-100% progress toward a plug, for HUD pre-warning ramp.
         -- UA: plugTimerPct: 0-100% прогрес до засмічення для попереднього попередження HUD.
         spec.data.plugTimerPct     = math.min(100, ((lc.plugTimer or 0) / 10000) * 100)
@@ -1435,21 +1611,41 @@ end
 --     Використовує pcall для кожного setValue щоб помилки валідації схеми не падали при збереженні.
 function rhm_Combine:saveToXMLFile(xmlFile, key, usedModNames)
     local spec = self.spec_rhm_Combine
+    -- EN: DIAG — print even if we bail early so we can confirm the function fires.
+    print(string.format("RHM: [SAVE-DIAG] saveToXMLFile called for %s | key=%s | hasSpec=%s | hasMem=%s",
+        self:getName() or "?",
+        tostring(key),
+        tostring(spec ~= nil),
+        tostring(spec and spec.combineMemory ~= nil)))
     if not spec or not spec.combineMemory then return end
-    
+
     local cur = key .. ".combineMemory.current"
     local mem = spec.combineMemory
     local settings = mem.currentSettings
-    
+
+    -- EN: DIAG — dump state snapshot so we can see exactly what's being written.
+    print(string.format("RHM: [SAVE-DIAG]   cur path = %s", cur))
+    print(string.format("RHM: [SAVE-DIAG]   currentCrop=%s | mode=%s | fan=%s | rotor=%s | upper=%s | lower=%s | target=%s",
+        tostring(mem.currentCrop),
+        tostring(mem.mode),
+        tostring(settings.fan),
+        tostring(settings.rotor),
+        tostring(settings.upperSieve),
+        tostring(settings.lowerSieve),
+        tostring(settings.targetEngineLoad)))
+
     -- EN: Use pcall for each setValue to prevent schema validation crashes.
-    -- UA: pcall для кожного setValue щоб помилки схеми не падали.
+    --     DIAG: now prints both success and failure so we know if schema rejects anything.
+    -- UA: pcall для кожного setValue щоб помилки схеми не падали. DIAG: виводимо успіх і помилку.
     local function safeSet(path, value)
         local ok, err = pcall(function() xmlFile:setValue(path, value) end)
         if not ok then
-            print("RHM: [SAVE] Warning - could not set " .. tostring(path) .. ": " .. tostring(err))
+            print("RHM: [SAVE] FAILED set " .. tostring(path) .. " = " .. tostring(value) .. " | err: " .. tostring(err))
+        else
+            print("RHM: [SAVE-DIAG]   OK  " .. tostring(path) .. " = " .. tostring(value))
         end
     end
-    
+
     safeSet(cur .. "#mode",         mem.mode or "AUTO")
     safeSet(cur .. "#autoSwitch",   mem.autoSwitchEnabled ~= false)
     safeSet(cur .. "#currentCrop",  mem.currentCrop or "")
@@ -1457,7 +1653,8 @@ function rhm_Combine:saveToXMLFile(xmlFile, key, usedModNames)
     safeSet(cur .. "#upperSieve",   settings.upperSieve or 50)
     safeSet(cur .. "#lowerSieve",   settings.lowerSieve or 50)
     safeSet(cur .. "#rotor",        settings.rotor or 50)
-    safeSet(cur .. "#upgradeLevel", mem.upgradeLevel or 0)
+    safeSet(cur .. "#upgradeLevel",     mem.upgradeLevel or 0)
+    safeSet(cur .. "#targetEngineLoad", settings.targetEngineLoad or 95)
     -- EN: Save concave (grain) or feeder (forage/root/cotton) under their respective keys.
     --     Both keys registered in schema; unused one gets 50 (default).
     if spec.machineType == "grain" then
@@ -1466,47 +1663,114 @@ function rhm_Combine:saveToXMLFile(xmlFile, key, usedModNames)
         safeSet(cur .. "#feeder",  settings.feeder or 50)
     end
 
-    print(string.format("RHM: [SAVE] Saved combine state for %s", self:getName() or "?"))
+    print(string.format("RHM: [SAVE] saveToXMLFile complete for %s (crop=%s)",
+        self:getName() or "?", tostring(mem.currentCrop)))
 end
 
----Завантаження стану з savegame файлу
-function rhm_Combine:loadFromXMLFile(xmlFile, key, resetVehicles)
+-- EN: Called by FS25 after a vehicle has finished loading from a savegame.
+--     `savegame` is nil for vehicles that are new (not loaded from save) — guard required.
+--     The XML key for our data mirrors what saveToXMLFile writes:
+--       savegame.key = "vehicles.vehicle(N)"  →  append "." .. modName .. ".rhm_Combine"
+--     NOTE: loadFromXMLFile is a Vehicle-level method, not a spec event — it is never raised.
+--           This onPostLoad is the correct hook for specialization-level XML loading.
+-- UA: Викликається FS25 після завершення завантаження транспорту зі збереження.
+--     `savegame` є nil для нових (не завантажених) транспортних засобів — потрібна перевірка.
+function rhm_Combine:onPostLoad(savegame)
     local spec = self.spec_rhm_Combine
+    -- EN: DIAG — print even if we bail early so we can confirm the function fires.
+    print(string.format("RHM: [LOAD-DIAG] onPostLoad called for %s | savegame=%s | hasSpec=%s | hasMem=%s",
+        self:getName() or "?",
+        tostring(savegame ~= nil),
+        tostring(spec ~= nil),
+        tostring(spec and spec.combineMemory ~= nil)))
     if not spec or not spec.combineMemory then return end
-    
-    -- Поточні налаштування
-    local cur = key .. ".combineMemory.current"
-    spec.combineMemory.mode              = xmlFile:getValue(cur .. "#mode", "AUTO")
+    if not savegame then
+        print("RHM: [LOAD-DIAG]   savegame is nil — new vehicle, skipping XML load")
+        return
+    end
+
+    -- EN: DIAG — show exactly what key FS25 gave us and the full path we'll read from.
+    local cur = savegame.key .. "." .. RHM_MOD_NAME .. ".rhm_Combine.combineMemory.current"
+    print(string.format("RHM: [LOAD-DIAG]   savegame.key = %s", tostring(savegame.key)))
+    print(string.format("RHM: [LOAD-DIAG]   RHM_MOD_NAME = %s", tostring(RHM_MOD_NAME)))
+    print(string.format("RHM: [LOAD-DIAG]   full cur path = %s", cur))
+
+    local xmlFile = savegame.xmlFile
+
+    -- EN: Check if the node exists before reading. hasProperty() does NOT validate schema,
+    --     so it safely returns false when our data simply hasn't been saved yet (first load
+    --     after installing the mod, or when schema registration failed on a previous session).
+    --     If the node is absent, we keep the CombineMemory.new() defaults (all 50s) and exit
+    --     cleanly — no "path not registered" spam, no nil settings, no line-1637 crash.
+    -- UA: Перевіряємо наявність вузла перед читанням. hasProperty() не валідує схему,
+    --     тому безпечно повертає false коли наші дані ще не були збережені.
+    local nodeExists = xmlFile:hasProperty(cur .. "#mode")
+    print(string.format("RHM: [LOAD-DIAG]   node exists (has #mode)? %s", tostring(nodeExists)))
+
+    if not nodeExists then
+        -- EN: No saved data for this combine — keep CombineMemory defaults (all 50s, AUTO mode).
+        --     This is expected on the first load after installing RHM, or when saving failed.
+        -- UA: Немає збережених даних — залишаємо дефолти CombineMemory (все 50, режим AUTO).
+        print(string.format("RHM: [LOAD-DIAG]   No RHM data in savegame — keeping defaults for %s", self:getName() or "?"))
+        -- EN: Still blend with store-purchased upgrade tier if present.
+        -- UA: Все одно враховуємо рівень апгрейду зі стору якщо є.
+        if RHMShopIntegration then
+            local storeLevel = RHMShopIntegration.getUpgradeLevelFromConfig(self)
+            if storeLevel and storeLevel > 0 then
+                spec.combineMemory.upgradeLevel = math.max(spec.combineMemory.upgradeLevel or 0, storeLevel)
+            end
+        end
+        return
+    end
+
+    spec.combineMemory.mode              = xmlFile:getValue(cur .. "#mode",       "AUTO") or "AUTO"
     spec.combineMemory.autoSwitchEnabled = xmlFile:getValue(cur .. "#autoSwitch", true)
-    local savedCrop = xmlFile:getValue(cur .. "#currentCrop")
+    local savedCrop = xmlFile:getValue(cur .. "#currentCrop", "") or ""
     spec.combineMemory.currentCrop = (savedCrop ~= "" and savedCrop) or nil
-    spec.combineMemory.currentSettings.fan        = xmlFile:getValue(cur .. "#fan", 50)
-    spec.combineMemory.currentSettings.upperSieve = xmlFile:getValue(cur .. "#upperSieve", 50)
-    spec.combineMemory.currentSettings.lowerSieve = xmlFile:getValue(cur .. "#lowerSieve", 50)
-    spec.combineMemory.currentSettings.rotor      = xmlFile:getValue(cur .. "#rotor", 50)
-    spec.combineMemory.upgradeLevel               = xmlFile:getValue(cur .. "#upgradeLevel", 0)
-    -- EN: Blend with store purchase — player may have bought a higher tier from the vehicle store.
-    --     Take the MAX so both purchase paths (in-GUI and store) are honoured across save cycles.
-    -- UA: Поєднуємо з покупкою в магазині — гравець міг купити вищий рівень із магазину.
-    --     Беремо MAX щоб обидва шляхи покупки (GUI і магазин) враховувались між збереженнями.
+
+    spec.combineMemory.currentSettings.fan             = xmlFile:getValue(cur .. "#fan",             50) or 50
+    spec.combineMemory.currentSettings.upperSieve      = xmlFile:getValue(cur .. "#upperSieve",      50) or 50
+    spec.combineMemory.currentSettings.lowerSieve      = xmlFile:getValue(cur .. "#lowerSieve",      50) or 50
+    spec.combineMemory.currentSettings.rotor           = xmlFile:getValue(cur .. "#rotor",           50) or 50
+    spec.combineMemory.currentSettings.targetEngineLoad = xmlFile:getValue(cur .. "#targetEngineLoad", 95) or 95
+    spec.combineMemory.upgradeLevel                    = xmlFile:getValue(cur .. "#upgradeLevel",    0)  or 0
+
+    -- EN: Blend with store purchase — take the MAX so both purchase paths are honoured.
+    -- UA: Поєднуємо з покупкою в магазині — беремо MAX щоб обидва шляхи враховувались.
     if RHMShopIntegration then
         local storeLevel = RHMShopIntegration.getUpgradeLevelFromConfig(self)
         if storeLevel then
-            spec.combineMemory.upgradeLevel = math.max(spec.combineMemory.upgradeLevel, storeLevel)
+            -- EN: nil guard: upgradeLevel is now guaranteed non-nil via "or 0" above,
+            --     but the guard is defensive against any future code path that forgets.
+            -- UA: Захист від nil: upgradeLevel вже гарантовано не nil, але для надійності.
+            spec.combineMemory.upgradeLevel = math.max(spec.combineMemory.upgradeLevel or 0, storeLevel)
         end
     end
+
     -- EN: Load the correct 5th parameter key based on machine type.
     --     Grain combines use 'concave'; fall back to '#feeder' for old saves.
     --     Forage/root/cotton use 'feeder'.
     if spec.machineType == "grain" then
-        local concaveVal = xmlFile:getValue(cur .. "#concave", nil)
-        local feederFallback = xmlFile:getValue(cur .. "#feeder", 50)
+        local concaveVal     = xmlFile:getValue(cur .. "#concave", nil)
+        local feederFallback = xmlFile:getValue(cur .. "#feeder",  50) or 50
         spec.combineMemory.currentSettings.concave = concaveVal or feederFallback
     else
-        spec.combineMemory.currentSettings.feeder = xmlFile:getValue(cur .. "#feeder", 50)
+        spec.combineMemory.currentSettings.feeder = xmlFile:getValue(cur .. "#feeder", 50) or 50
     end
 
-    print(string.format("RHM: [LOAD] Loaded combine state for %s", self:getName() or "?"))
+    -- EN: DIAG — dump everything we read back so we can compare to what was saved.
+    local s = spec.combineMemory.currentSettings
+    print(string.format("RHM: [LOAD-DIAG]   READ BACK: rawCrop='%s' → currentCrop=%s | mode=%s | fan=%s rotor=%s upper=%s lower=%s target=%s",
+        tostring(savedCrop),
+        tostring(spec.combineMemory.currentCrop),
+        tostring(spec.combineMemory.mode),
+        tostring(s.fan), tostring(s.rotor),
+        tostring(s.upperSieve), tostring(s.lowerSieve),
+        tostring(s.targetEngineLoad)))
+    print(string.format("RHM: [LOAD] onPostLoad complete for %s (crop=%s mode=%s)",
+        self:getName() or "?",
+        tostring(spec.combineMemory.currentCrop),
+        tostring(spec.combineMemory.mode)))
 end
 
 -- ============================================================================
@@ -1534,6 +1798,7 @@ function rhm_Combine:onWriteStream(streamId, connection)
         streamWriteString(streamId, "AUTO")  -- mode
         streamWriteString(streamId, "")      -- currentCrop (empty = nil)
         streamWriteUInt8(streamId, 0)        -- upgradeLevel
+        streamWriteUInt8(streamId, 95)       -- targetEngineLoad default
         return
     end
     
@@ -1558,6 +1823,7 @@ function rhm_Combine:onWriteStream(streamId, connection)
         streamWriteString(streamId, mem.mode or "AUTO")
         streamWriteString(streamId, mem.currentCrop or "")
         streamWriteUInt8(streamId, mem.upgradeLevel or 0)
+        streamWriteUInt8(streamId, math.floor(mem.currentSettings.targetEngineLoad or 95))  -- targetEngineLoad
     else
         streamWriteUInt8(streamId, 50)
         streamWriteUInt8(streamId, 50)
@@ -1567,6 +1833,7 @@ function rhm_Combine:onWriteStream(streamId, connection)
         streamWriteString(streamId, "AUTO")
         streamWriteString(streamId, "")
         streamWriteUInt8(streamId, 0)   -- upgradeLevel
+        streamWriteUInt8(streamId, 95)  -- targetEngineLoad default
     end
 end
 
@@ -1591,6 +1858,7 @@ function rhm_Combine:onReadStream(streamId, connection)
         streamReadString(streamId)
         streamReadString(streamId)
         streamReadUInt8(streamId)  -- upgradeLevel
+        streamReadUInt8(streamId)  -- targetEngineLoad (skip)
         return
     end
     
@@ -1616,6 +1884,7 @@ function rhm_Combine:onReadStream(streamId, connection)
     local mode = streamReadString(streamId)
     local currentCrop = streamReadString(streamId)
     local upgradeLevel = streamReadUInt8(streamId)
+    local targetEngineLoad = streamReadUInt8(streamId)
 
     -- Apply to combineMemory if available
     if spec.combineMemory then
@@ -1632,6 +1901,9 @@ function rhm_Combine:onReadStream(streamId, connection)
         spec.combineMemory.mode = mode or "AUTO"
         spec.combineMemory.currentCrop = (currentCrop ~= "" and currentCrop) or nil
         spec.combineMemory.upgradeLevel = upgradeLevel or 0
+        -- EN: Sync the operator's target engine load to joining clients.
+        --     Without this, clients always see the default 95% regardless of what the operator set.
+        spec.combineMemory.currentSettings.targetEngineLoad = targetEngineLoad or 95
     end
 end
 
