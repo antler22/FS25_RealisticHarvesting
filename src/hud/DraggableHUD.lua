@@ -460,6 +460,21 @@ function DraggableHUD:drawContent()
         end
     end
 
+    local function processingGrade(score)
+        if     score >= 97 then return "A+"
+        elseif score >= 93 then return "A"
+        elseif score >= 90 then return "A-"
+        elseif score >= 87 then return "B+"
+        elseif score >= 83 then return "B"
+        elseif score >= 80 then return "B-"
+        elseif score >= 77 then return "C+"
+        elseif score >= 73 then return "C"
+        elseif score >= 70 then return "C-"
+        elseif score >= 60 then return "D"
+        else                    return "F"
+        end
+    end
+
     -- EN: PLUG WARNING — highest priority, shown in urgent red when rotor is plugged.
     --     Displayed regardless of upgrade level (critical safety information).
     -- UA: ПОПЕРЕДЖЕННЯ ЗАСМІЧЕННЯ — найвищий пріоритет, показується червоним при засміченні ротора.
@@ -506,7 +521,7 @@ function DraggableHUD:drawContent()
                     label, score, r, g, b)
             else
                 self:drawRow(iconX, textX, textY, iconWidth, iconHeight, textSize, "score",
-                    string.format("%d%%", score), score, r, g, b)
+                    string.format("%d%% %s", score, processingGrade(score)), score, r, g, b)
             end
             textY = textY - lineHeight
         else

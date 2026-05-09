@@ -228,6 +228,48 @@ local templates = {
         acceleratorGap  = {optimal = 50, min = 42, max = 58, tolerance =  8},  -- 3 mm gap
     },
 
+    -- Miscanthus — tall perennial energy/biomass crop. Harvested late winter/spring when dry.
+    -- Very fibrous, silica-rich stalks; no kernels to crack. Typical biogas/biomass chop: 15-25 mm.
+    -- ChopLength: 20mm → (20-3)/(25-3)*100 ≈ 77%. Wide KP (no kernels): 3mm gap → 60%.
+    -- AcceleratorGap: slightly tighter than grass to handle tough dry stalks → ~2.5mm → 42%.
+    forage_miscanthus = {
+        chopLength      = {optimal = 77, min = 45, max = 100, tolerance = 18},  -- ~20 mm
+        kernelProcessor = {optimal = 60, min = 30, max = 100, tolerance = 30},  -- ~3 mm (conditioning only, no kernels)
+        acceleratorGap  = {optimal = 42, min = 17, max = 67,  tolerance = 15},  -- ~2.5 mm (firm stalks need grip)
+    },
+
+    -- Triticale Silage — cereal forage crop, typically harvested in the early dough stage.
+    -- Chop length slightly longer than grass haylage (needs good particle size for fermentation).
+    -- Soft kernels present at harvest — moderate KP gap (~2mm) for partial crack without shattering.
+    -- ChopLength: 13mm → (13-3)/(25-3)*100 ≈ 45%.  KP: ~2mm gap → 40%.  Accelerator: ~3mm → 50%.
+    forage_triticale = {
+        chopLength      = {optimal = 45, min = 18, max = 73, tolerance = 12},  -- ~13 mm (cereal silage particle size)
+        kernelProcessor = {optimal = 40, min = 15, max = 65, tolerance = 15},  -- ~2 mm gap (soft dough-stage kernels)
+        acceleratorGap  = {optimal = 50, min = 25, max = 75, tolerance = 12},  -- ~3 mm (standard for cereal crop)
+    },
+
+    -- Soybean / pinto bean forage - legume silage/haylage. No hard corn kernel to crack,
+    -- but tighter processing than alfalfa helps break stems and pods.
+    forage_legume_silage = {
+        chopLength      = {optimal = 27, min = 10, max = 45, tolerance = 10},  -- ~9 mm
+        kernelProcessor = {optimal = 60, min = 35, max = 85, tolerance = 20},  -- conditioning, not corn-style KP
+        acceleratorGap  = {optimal = 58, min = 38, max = 78, tolerance = 15},  -- moderate crop acceleration
+    },
+
+    -- Straw / woodchips - dry, fibrous material. Processing score mostly reflects cut size
+    -- and discharge consistency, not feed value.
+    forage_straw = {
+        chopLength      = {optimal = 64, min = 35, max = 100, tolerance = 18},  -- ~17 mm
+        kernelProcessor = {optimal = 80, min = 50, max = 100, tolerance = 30},  -- wide/open
+        acceleratorGap  = {optimal = 42, min = 20, max = 65,  tolerance = 15},  -- needs grip, avoid over-tightening
+    },
+
+    forage_woodchips = {
+        chopLength      = {optimal = 86,  min = 55, max = 100, tolerance = 18}, -- coarse chips
+        kernelProcessor = {optimal = 100, min = 70, max = 100, tolerance = 30}, -- bypass/open
+        acceleratorGap  = {optimal = 33,  min = 12, max = 55,  tolerance = 15}, -- firm accelerator for dense material
+    },
+
     -- ============================
     -- ROOT HARVEST TEMPLATES
     -- Params: rotor/CleaningRollers (100-350 RPM) | shakingIntensity (1-5) | feeder/Elevator (100-400 RPM)
@@ -433,10 +475,19 @@ CombineSettingsDatabase.crops = {
     ["DRYGRASS"]= { name = "Суха Трава",  nameEN = "Dry Grass",    template = templates.forage_grass,  machineType = "forage", group = "forage", fillType = safeFillType(FillType.DRYGRASS) },
     ["GRASS_WINDROW"]   = { name = "Валок Трави",       nameEN = "Grass Windrow",        template = templates.forage_grass_windrow,  machineType = "forage", group = "forage", fillType = safeFillType(FillType.GRASS_WINDROW) },
     ["DRYGRASS_WINDROW"]= { name = "Валок Сухої Трави", nameEN = "Dry Grass Windrow",    template = templates.forage_grass_windrow,  machineType = "forage", group = "forage", fillType = safeFillType(FillType.DRYGRASS_WINDROW) },
+    ["TRITICALE_FORAGE"] = { name = "Тритикале на силос", nameEN = "Triticale Silage", template = templates.forage_triticale, machineType = "forage", group = "forage", fillType = safeFillType(FillType.TRITICALE) },
+    ["TRITICALE_WINDROW"] = { name = "Валок Тритикале", nameEN = "Triticale Windrow", template = templates.forage_triticale, machineType = "forage", group = "forage", fillType = safeFillType(FillType.TRITICALE_WINDROW) },
     ["MAIZE_FORAGE"] = { name = "Кукурудза на силос", nameEN = "Corn Silage",     template = templates.forage_corn,    machineType = "forage", group = "forage", fillType = safeFillType(FillType.MAIZE) },
+    ["CORN_WINDROW"] = { name = "Валок кукурудзи", nameEN = "Corn Windrow", template = templates.forage_corn, machineType = "forage", group = "forage", fillType = safeFillType(FillType.CORN_WINDROW) },
     ["ALFALFA"]      = { name = "Люцерна",            nameEN = "Alfalfa",         template = templates.forage_alfalfa, machineType = "forage", group = "forage", fillType = safeFillType(FillType.ALFALFA) },
     ["CLOVER"]       = { name = "Конюшина",           nameEN = "Clover",          template = templates.forage_alfalfa, machineType = "forage", group = "forage", fillType = safeFillType(FillType.CLOVER) },
-    ["MINT"]         = { name = "М'ята",              nameEN = "Mint",            template = templates.forage_mint,    machineType = "forage", group = "forage", fillType = safeFillType(FillType.MINT) },
+    ["MINT"]              = { name = "М'ята",                nameEN = "Mint",                template = templates.forage_mint,       machineType = "forage", group = "forage", fillType = safeFillType(FillType.MINT) },
+    ["MINT_WINDROW"]      = { name = "Валок м'яти",          nameEN = "Mint Windrow",        template = templates.forage_mint,       machineType = "forage", group = "forage", fillType = safeFillType(FillType.MINT_WINDROW) },
+    ["MISCANTHUS"]        = { name = "Міскантус",            nameEN = "Miscanthus",          template = templates.forage_miscanthus, machineType = "forage", group = "forage", fillType = safeFillType(FillType.MISCANTHUS) },
+    ["SOYBEAN_WINDROW"]   = { name = "Валок сої",            nameEN = "Soybean Windrow",     template = templates.forage_legume_silage, machineType = "forage", group = "forage", fillType = safeFillType(FillType.SOYBEAN_WINDROW) },
+    ["PINTOBEAN_FORAGE"]  = { name = "Пінто боби на силос",  nameEN = "Pinto Bean Silage",   template = templates.forage_legume_silage, machineType = "forage", group = "forage", fillType = safeFillType(FillType.PINTOBEAN) },
+    ["STRAW"]             = { name = "Солома",               nameEN = "Straw",               template = templates.forage_straw,       machineType = "forage", group = "forage", fillType = safeFillType(FillType.STRAW) },
+    ["WOODCHIPS"]         = { name = "Тріска",               nameEN = "Wood Chips",          template = templates.forage_woodchips,   machineType = "forage", group = "forage", fillType = safeFillType(FillType.WOODCHIPS) },
 
     -- Бавовник (machineType = "cotton")
     ["COTTON"] = { name = "Бавовник", nameEN = "Cotton", template = templates.cotton_picker, machineType = "cotton", group = "cotton", fillType = safeFillType(FillType.COTTON) },
@@ -525,9 +576,13 @@ function CombineSettingsDatabase:getCropNameFromFillType(fillType)
     -- Шукаємо crop за ключем FillType
     local fillTypeMapping = {
         ["WHEAT"] = "WHEAT",
+        ["WHEAT_CUT"] = "WHEAT",
         ["BARLEY"] = "BARLEY",
+        ["BARLEY_CUT"] = "BARLEY",
         ["OAT"] = "OAT",
+        ["OAT_CUT"] = "OAT",
         ["CANOLA"] = "CANOLA",
+        ["CANOLA_CUT"] = "CANOLA",
         ["SUNFLOWER"] = "SUNFLOWER",
         ["MAIZE"] = "CORN",
         ["SOYBEAN"] = "SOYBEAN",
@@ -567,15 +622,36 @@ function CombineSettingsDatabase:getCropNameFromFillType(fillType)
 
         -- Forage outputs
         ["CHAFF"] = "MAIZE_FORAGE",
+        ["STRAW"] = "STRAW",
+        ["WOODCHIPS"] = "WOODCHIPS",
+        ["CORN_WINDROW"] = "CORN_WINDROW",
+        ["SOYBEAN_WINDROW"] = "SOYBEAN_WINDROW",
         ["GRASS"] = "GRASS",
         ["DRYGRASS"] = "DRYGRASS",
         ["TALLGRASS"] = "GRASS",
-        ["GRASS_WINDROW"] = "GRASS_WINDROW",
+        ["TRITICALE_WINDROW"] = "TRITICALE_WINDROW",
+        ["TRITICALE_FORAGE"] = "TRITICALE_FORAGE",
+        -- EN: Windrow pickup variants — keep windrow crop profiles for settings/quality.
+        --     CropThroughputConfig strips the suffix when it needs the base throughput curve.
+        --     FS25's fillTypeConverter maps
+        --     TRITICALE_WINDROW → GRASS_WINDROW and DRYGRASS_WINDROW for dry-cut windrows;
+        --     we can't distinguish the original crop from the output fill type, so we fall back
+        --     to the closest representative profile unless the operator has selected a
+        --     more specific forage crop profile such as TRITICALE_WINDROW.
+        -- UA: Варіанти підбирачів валків — зберігаємо профіль валка для налаштувань.
+        ["GRASS_WINDROW"]    = "GRASS_WINDROW",
         ["DRYGRASS_WINDROW"] = "DRYGRASS_WINDROW",
         ["SILAGE"] = "MAIZE_FORAGE",
-        ["ALFALFA"] = "ALFALFA",
+        ["ALFALFA"]         = "ALFALFA",       -- direct fill (e.g. standing alfalfa direct-cut)
+        ["ALFALFA_WINDROW"] = "ALFALFA",       -- mowed alfalfa before pickup conversion
+        ["DRYALFALFA_WINDROW"] = "ALFALFA",    -- dry alfalfa pickup output still uses alfalfa chopper settings
+        ["ALFALFA_CHOPPED"] = "ALFALFA",       -- forage pickup output: ALFALFA_WINDROW → ALFALFA_CHOPPED
         ["CLOVER"] = "CLOVER",
         ["MINT"] = "MINT",
+        ["MINT_WINDROW"] = "MINT_WINDROW",
+        ["MISCANTHUS"] = "MISCANTHUS",
+        ["PINTOBEAN"] = "PINTOBEAN_FORAGE",
+        ["PINTOBEAN_CUT"] = "PINTOBEAN_FORAGE",
 
         -- Cotton
         ["COTTON"] = "COTTON",
@@ -589,6 +665,9 @@ function CombineSettingsDatabase:getCropNameFromFillType(fillType)
             matchedName = fillTypeMapping[baseType]
         elseif fillTypeKey:find("CUT_") then
             local baseType = fillTypeKey:gsub("CUT_", "")
+            matchedName = fillTypeMapping[baseType]
+        elseif fillTypeKey:find("_CUT") then
+            local baseType = fillTypeKey:gsub("_CUT", "")
             matchedName = fillTypeMapping[baseType]
         end
     end

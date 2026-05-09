@@ -428,6 +428,11 @@ function CombineMemory:checkSettingsForCrop(cropName)
                 if signed < 0 then
                     -- Gap too tight → power cost → speed penalty
                     effScore   = effScore   + score ;  effCount   = effCount   + 1
+                    if self.machineType == "forage" then
+                        -- EN: Tight accelerator gaps also bruise/overwork forage, so the
+                        --     processing score must drop even when engine load is low.
+                        cleanScore = cleanScore + score ;  cleanCount = cleanCount + 1
+                    end
                 else
                     -- Optimal or gap too open → discharge quality penalty (or bonus at centre)
                     cleanScore = cleanScore + score ;  cleanCount = cleanCount + 1

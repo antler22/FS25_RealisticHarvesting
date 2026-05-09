@@ -214,9 +214,14 @@
          Sorghum sil    238 US t/hr         537 US t/hr   (factor 0.85)
          Sugarcane      290 US t/hr         652 US t/hr   (factor 0.70)
          Mint           184 US t/hr         415 US t/hr   (factor 1.10)
+         Miscanthus     140 US t/hr         315 US t/hr   (factor 1.43 — very tough, fibrous dry stalks)
     -->
 
     <crop name="maize"
+          tPerHrMin="200"
+          tPerHrMax="455" />
+
+    <crop name="corn"
           tPerHrMin="200"
           tPerHrMax="455" />
 
@@ -251,5 +256,25 @@
     <crop name="mint"
           tPerHrMin="184"
           tPerHrMax="415" />
+
+    <crop name="soybean"
+          tPerHrMin="160"
+          tPerHrMax="360" />
+
+    <crop name="pintobean"
+          tPerHrMin="155"
+          tPerHrMax="350" />
+
+    <crop name="straw"
+          tPerHrMin="165"
+          tPerHrMax="370" />
+
+    <crop name="miscanthus"
+          tPerHrMin="140"
+          tPerHrMax="315" />
+
+    <crop name="woodchips"
+          tPerHrMin="125"
+          tPerHrMax="280" />
 
 </cropThroughput>

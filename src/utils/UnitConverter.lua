@@ -46,13 +46,17 @@ function UnitConverter.initBushelCoefficients()
     -- EN: Standard USDA bushel weights for each supported crop (bu/tonne).
     -- UA: Стандартні ваги бушелів USDA для кожної підтримуваної культури (буш/тонна).
     addCoef("WHEAT", 36.76)
+    addCoef("WHEAT_CUT", 36.76)
     addCoef("BARLEY", 45.87)
+    addCoef("BARLEY_CUT", 45.87)
     addCoef("OAT", 68.97)
+    addCoef("OAT_CUT", 68.97)
     addCoef("RICE", 49.02)
     addCoef("RICELONGGRAIN", 49.02)
     addCoef("SORGHUM", 39.37)
     addCoef("SOYBEAN", 36.76)
     addCoef("CANOLA", 44.05)
+    addCoef("CANOLA_CUT", 44.05)
     addCoef("SUNFLOWER", 88.50)
     addCoef("MAIZE", 39.37)
     addCoef("COTTON", 62.89)
@@ -101,8 +105,11 @@ function UnitConverter.initCropDensities()
     -- EN: density = lbs_per_bu × 0.453592 kg/lb ÷ 35.2391 L/bu  (USDA standard bushel weights)
     -- UA: Формула: кг/л = фунти/буш × 0.453592 / 35.2391
     addDensity("WHEAT",         0.772)  -- 60 lb/bu
+    addDensity("WHEAT_CUT",     0.772)  -- swathed wheat grain equivalent
     addDensity("BARLEY",        0.618)  -- 48 lb/bu
+    addDensity("BARLEY_CUT",    0.618)  -- swathed barley grain equivalent
     addDensity("OAT",           0.412)  -- 32 lb/bu
+    addDensity("OAT_CUT",       0.412)  -- swathed oat grain equivalent
     addDensity("RYE",           0.721)  -- 56 lb/bu
     addDensity("RICE",          0.579)  -- 45 lb/bu (rough rice)
     addDensity("RICELONGGRAIN", 0.579)  -- same as rough rice
@@ -110,10 +117,26 @@ function UnitConverter.initCropDensities()
     addDensity("MAIZE",         0.721)  -- 56 lb/bu
     addDensity("SOYBEAN",       0.772)  -- 60 lb/bu
     addDensity("CANOLA",        0.643)  -- 50 lb/bu
+    addDensity("CANOLA_CUT",    0.643)  -- swathed canola grain equivalent
     addDensity("SUNFLOWER",     0.322)  -- 25 lb/bu (oil sunflower with hull)
     addDensity("COTTON",        0.412)  -- 32 lb/bu (seed cotton)
     addDensity("SUGARBEET",     0.760)  -- approximate
     addDensity("POTATO",        0.770)  -- approximate
+    -- EN: Pickup-header forage outputs. FS25 fallback density is too high for
+    --     loose windrow/chopped forage and inflates forage yield roughly 2.5-3x.
+    addDensity("GRASS_WINDROW",     0.145)
+    addDensity("DRYGRASS_WINDROW",  0.120)
+    addDensity("ALFALFA_WINDROW",   0.140)
+    addDensity("DRYALFALFA_WINDROW",0.120)
+    addDensity("ALFALFA_CHOPPED",   0.145)
+    addDensity("TRITICALE_WINDROW", 0.145)
+    addDensity("MINT_WINDROW",      0.125)
+    addDensity("SOYBEAN_WINDROW",   0.150)
+    addDensity("CORN_WINDROW",      0.210)
+    addDensity("MISCANTHUS",        0.130)
+    addDensity("STRAW",             0.090)
+    addDensity("WOODCHIPS",         0.250)
+    addDensity("CHAFF",             0.220)
     -- EN: Diagnostic: confirm how many entries resolved and what FillType ID SORGHUM got.
     --     If SORGHUM FillType ID is nil the density fix is silently inactive for that crop.
     -- UA: Діагностика: підтверджуємо кількість записів і FillType ID для SORGHUM.

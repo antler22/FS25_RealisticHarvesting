@@ -30,6 +30,7 @@ function LoadCalculator.new(modDirectory)
     self.basePerfMass = 0  -- EN: kg per second / UA: кг на секунду
     self.cachedHP = 0            -- EN: Engine HP cached for dynamic crop-curve updates / UA: Кешоване HP для динамічних оновлень
     self.lastBasePerfCrop = nil  -- EN: Crop name used when basePerfMass was last calculated / UA: Культура при останньому розрахунку
+    self.lastPickupCrop   = nil  -- EN: Crop name last applied via the pickup secondary forage path / UA: Культура, застосована через вторинний форажний шлях підбирача
     self.currentAvgMass = 0
     self.lastAvgMass = 0  -- EN: Prior average for acceleration / UA: Попереднє середнє для прискорення
     self.rawAvgMass = 0  -- EN: Raw unsmoothed value for braking / UA: Сире незгладжене для гальмування
@@ -174,6 +175,8 @@ function LoadCalculator:loadDefaultCropFactors()
                 mappedFactor = factorMap[key:gsub("_WINDROW", "")]
             elseif key:find("CUT_") then
                 mappedFactor = factorMap[key:gsub("CUT_", "")]
+            elseif key:find("_CUT") then
+                mappedFactor = factorMap[key:gsub("_CUT", "")]
             end
         end
         if mappedFactor then
@@ -195,6 +198,8 @@ function LoadCalculator:loadDefaultCropFactors()
                     mappedFactor = factorMap[key:gsub("_WINDROW", "")]
                 elseif key:find("CUT_") then
                     mappedFactor = factorMap[key:gsub("CUT_", "")]
+                elseif key:find("_CUT") then
+                    mappedFactor = factorMap[key:gsub("_CUT", "")]
                 elseif key == "ONION_DIRTY" then
                     mappedFactor = factorMap["ONION_DIRTY"] or factorMap["ONION"]
                 elseif key == "MEADOW" then
@@ -801,6 +806,19 @@ end
 function LoadCalculator:update(vehicle, dt, mass)
     self.totalDistance = self.totalDistance + vehicle.lastMovedDistance
     self.loadAccumulatedMass = (self.loadAccumulatedMass or 0) + mass
+
+    -- ── FORAGE-LC-UPDATE diagnostic ──────────────────────────────────────────
+    -- Confirms mass is flowing into the accumulator each tick.
+    -- If mass is always 0 here, the problem is upstream in rhm_Combine onUpdateTick.
+    if self.combineMemory and self.combineMemory.machineType == "forage" then
+        self._lcDbgCount = (self._lcDbgCount or 0) + 1
+        if self._lcDbgCount % 30 == 1 then
+            print(string.format(
+                "RHM: [FORAGE-LC-UPD #%d] mass=%.6f loadAccumulated=%.6f currentTime=%.0fms dist=%.3fm",
+                self._lcDbgCount, mass, self.loadAccumulatedMass, self.currentTime, self.totalDistance))
+        end
+    end
+    -- ────────────────────────────────────────────────────────────────────────
     
     -- INSTANT REACTION FIX:
     -- EN: Only reset to 5 km/h if starting from idle (prevents reset loop during harvest)
@@ -863,6 +881,38 @@ function LoadCalculator:calculateEngineLoad(vehicle)
                     tostring(ftName), self.basePerfMass))
             end
             if currentCropName then self.lastBasePerfCrop = currentCropName end
+        end
+
+        -- EN: Secondary path — pickup forage headers (windrow pickup) never call addCutterArea,
+        --     so lastValidInputFruitType stays 0 and the block above fires once with ftName=nil,
+        --     falling back to "maize".  When addFillUnitFillLevel detects the actual output fill
+        --     type (e.g. GRASS_WINDROW → mapped to "GRASS" by CombineSettingsDatabase) it sets
+        --     currentCrop on combineMemory.  We catch that change here using a SEPARATE tracking
+        --     variable (lastPickupCrop) so the ft-block setting lastBasePerfCrop cannot mask it.
+        --
+        --     Timing note: addFillUnitFillLevel may fire in the same frame as calculateEngineLoad
+        --     but after it (scenario B) or before it (scenario A).  Using lastPickupCrop instead
+        --     of lastBasePerfCrop guarantees this block fires on the very next frame where
+        --     currentCropName is set, regardless of order.
+        -- UA: Додатковий шлях — для підбиральних форажних голівок.
+        --     Використовуємо окрему змінну lastPickupCrop, щоб ft-блок не заблокував цей шлях.
+        if currentCropName and currentCropName ~= (self.lastPickupCrop or "")
+           and self.cachedHP and self.cachedHP > 0 then
+            local params = CropThroughputConfig and CropThroughputConfig.getForageCurveParams
+                           and (CropThroughputConfig.getForageCurveParams(currentCropName)
+                                or CropThroughputConfig.getForageCurveParams("maize"))
+            if params then
+                self.basePerfMass = params.coef * (self.cachedHP ^ params.exp)
+                Logging.info(string.format(
+                    "[RHM] Forage curve (pickup): %s → basePerfMass=%.2f kg/s (%.0f US ton/h) @ %d hp",
+                    currentCropName, self.basePerfMass, self.basePerfMass * 3.6 * 1.10231, self.cachedHP))
+            else
+                Logging.warning(string.format(
+                    "[RHM] Forage curve (pickup): no params for '%s', basePerfMass unchanged=%.2f kg/s",
+                    currentCropName, self.basePerfMass))
+            end
+            self.lastPickupCrop    = currentCropName
+            self.lastBasePerfCrop  = currentCropName
         end
     elseif currentCropName and currentCropName ~= self.lastBasePerfCrop and self.cachedHP > 0 then
         -- EN: Grain combines — apply the per-crop AEM throughput curve.
@@ -1099,6 +1149,20 @@ function LoadCalculator:calculateEngineLoad(vehicle)
     else
         self.engineLoad = 0
     end
+
+    -- ── FORAGE-LC-LOAD diagnostic ────────────────────────────────────────────
+    -- Fires every ~1.5 s (each averaging window). Shows every number in the load
+    -- formula so we can see exactly why engineLoad is 0 even when basePerfMass > 0.
+    if isForageMachine then
+        print(string.format(
+            "RHM: [FORAGE-LC-LOAD] loadAcc=%.4f safeTime=%.0fms cropFactor=%.3f moistFactor=%.3f"
+            .. " rawAvgMass=%.4f currentAvgMass=%.4f basePerfMass=%.2f maxAvgMass=%.2f engineLoad=%.4f",
+            self.loadAccumulatedMass or 0, safeTime, cropFactor,
+            (self.moistureFactor or 1.0),
+            rawAvgMass, self.currentAvgMass, self.basePerfMass,
+            maxAvgMass, self.engineLoad))
+    end
+    -- ────────────────────────────────────────────────────────────────────────
 end
 
 ---EN: Calculates Vehicle Speed Limit / UA: Розраховує обмеження швидкості
@@ -1313,7 +1377,51 @@ end
 function LoadCalculator:calculateTotalCropLoss()
     local baseLoss = self:calculateCropLoss()  -- EN: Floor + overload loss (already multiplied)
 
-    -- EN: Guard — if crop loss is globally disabled, zero everything and bail.
+    local machineTypeForLoss = self.combineMemory and self.combineMemory.machineType or "grain"
+
+    -- EN: FORAGE MACHINES — chop quality path.
+    --     Forage harvesters have no grain loss (no sieves, no grain hitting the floor).
+    --     However, chopLength / kernelProcessor deviations directly affect silage quality
+    --     (particle size, kernel cracking). This is represented as cleanLoss so the HUD
+    --     "Processing Score" (100 - cleanLoss) responds to calibration changes.
+    --
+    --     Key differences from grain path:
+    --       1. NOT gated by enableCropLoss — that toggle is conceptually "grain falling on the
+    --          floor", which doesn't apply here. Chop quality is always tracked.
+    --       2. NOT load-scaled — chop quality is determined by machine settings at any throughput.
+    --          A bad chopLength gives poor particle size at 20% load just as much as at 100%.
+    --       3. thrLoss and cropLoss are always 0 (no physical grain loss on forage machines).
+    -- UA: ФОРАЖНІ КОМБАЙНИ — шлях якості різки.
+    --     Немає втрат зерна, але відхилення довжини різки/KP впливають на якість силосу.
+    --     cleanLoss відображає якість обробки, незалежно від enableCropLoss та навантаження.
+    if machineTypeForLoss == "forage" then
+        local cropName = self.currentCrop or (self.combineMemory and self.combineMemory.currentCrop)
+        local rawClean = self.rawCleanSettingsLoss or 0
+        if self.combineMemory and cropName then
+            local _, _, currentCleanLoss, _ = self.combineMemory:checkSettingsForCrop(cropName)
+            rawClean = math.max(0, currentCleanLoss or 0)
+            self.rawCleanSettingsLoss = rawClean
+        end
+        -- EN: Use lossMultiplier so difficulty setting still scales the sensitivity
+        --     (Arcade = more forgiving feedback, Realistic = tighter tolerance).
+        --     Guard against nil g_realisticHarvestManager the same way the grain path does.
+        local lossMultiplier = 1.0
+        if g_realisticHarvestManager and g_realisticHarvestManager.settings then
+            lossMultiplier = g_realisticHarvestManager.settings:getLossMultiplier()
+        end
+        self.thrLoss   = 0
+        self.cleanLoss = math.min(rawClean * lossMultiplier, 50)
+        self.cropLoss  = 0
+
+        if RHM_Debug and RHM_Debug.isEnabled("LoadCalculator") then
+            print(string.format(
+                "RHM [LC:calcLoss:forage] rawClean=%.2f lossMultiplier=%.2f → cleanLoss=%.2f (score=%d%%)",
+                rawClean, lossMultiplier, self.cleanLoss, math.floor(100 - self.cleanLoss + 0.5)))
+        end
+        return 0
+    end
+
+    -- EN: Guard — if crop loss is globally disabled for grain/root machines, zero everything and bail.
     if not g_realisticHarvestManager or not g_realisticHarvestManager.settings
             or not g_realisticHarvestManager.settings.enableCropLoss then
         self.thrLoss  = 0
@@ -1345,8 +1453,7 @@ function LoadCalculator:calculateTotalCropLoss()
     -- UA: Коефіцієнт втрат від вологості — вологе зерно погано проходить через решета/ротор.
     --     Застосовується лише до штрафів налаштувань, не до базових втрат від перевантаження.
     local moistLossMult = 1.0
-    local machineTypeForLoss = self.combineMemory and self.combineMemory.machineType or "grain"
-    if machineTypeForLoss ~= "forage" and machineTypeForLoss ~= "root" then
+    if machineTypeForLoss ~= "root" then
         moistLossMult = self.moistureLossFactor or 1.0
     end
 

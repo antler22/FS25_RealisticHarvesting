@@ -509,6 +509,20 @@ function CombineCalibrationGUI:draw()
         elseif effPenalty < -0.1 and lossPenalty <= 0.5 then
             statsTextColor = ui.colors.success
         end
+        local function processingGrade(score)
+            if     score >= 97 then return "A+"
+            elseif score >= 93 then return "A"
+            elseif score >= 90 then return "A-"
+            elseif score >= 87 then return "B+"
+            elseif score >= 83 then return "B"
+            elseif score >= 80 then return "B-"
+            elseif score >= 77 then return "C+"
+            elseif score >= 73 then return "C"
+            elseif score >= 70 then return "C-"
+            elseif score >= 60 then return "D"
+            else                    return "F"
+            end
+        end
         setTextAlignment(RenderText.ALIGN_RIGHT)
         setTextColor(unpack(statsTextColor))
         local statsStr
@@ -516,7 +530,7 @@ function CombineCalibrationGUI:draw()
             -- EN: Forage: Processing Score (inverted — 100% = perfect). Shows in GUI stats bar.
             local lossVal = math.max(0, cleanPenalty)
             local score   = math.max(0, math.floor(100 - lossVal + 0.5))
-            statsStr = "Spd " .. speedStr .. "  Processing Score: " .. score .. "%"
+            statsStr = "Spd " .. speedStr .. "  Processing Score: " .. score .. "% " .. processingGrade(score)
         else
             statsStr = "Spd " .. speedStr .. "  Sep " .. thrStr .. "  Cln " .. clnStr
         end
@@ -760,7 +774,22 @@ function CombineCalibrationGUI:draw()
         if machineType == "forage" then
             -- EN: Convert avg clean loss % back to Processing Score for forage display.
             local lossNum  = tonumber((s.avgCleanLoss or "0"):match("([%d%.]+)")) or 0
-            local scoreStr = string.format("%d%%", math.max(0, math.floor(100 - lossNum + 0.5)))
+            local score = math.max(0, math.floor(100 - lossNum + 0.5))
+            local function reportProcessingGrade(scoreValue)
+                if     scoreValue >= 97 then return "A+"
+                elseif scoreValue >= 93 then return "A"
+                elseif scoreValue >= 90 then return "A-"
+                elseif scoreValue >= 87 then return "B+"
+                elseif scoreValue >= 83 then return "B"
+                elseif scoreValue >= 80 then return "B-"
+                elseif scoreValue >= 77 then return "C+"
+                elseif scoreValue >= 73 then return "C"
+                elseif scoreValue >= 70 then return "C-"
+                elseif scoreValue >= 60 then return "D"
+                else                         return "F"
+                end
+            end
+            local scoreStr = string.format("%d%% %s", score, reportProcessingGrade(score))
             statRow("Score:", scoreStr,   "Plugs:", s.plugs)
         else
             -- EN: Total loss only — use HUD / small display for Sep/Cln/Hdr breakdown.

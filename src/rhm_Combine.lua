@@ -474,28 +474,138 @@ end
 function rhm_Combine:addFillUnitFillLevel(superFunc, ...)
     local r1, r2, r3, r4, r5, r6 = superFunc(self, ...)
     local actualAdded = r1 -- Base game returns actual delta as first arg
-    
+
+    -- ── FORAGE-FILL diagnostic ───────────────────────────────────────────────
+    -- Fires on EVERY call so we can see whether the forage harvester's fill unit
+    -- is receiving liters and whether the isCutting guard lets them through.
+    local fdbg = self.spec_rhm_Combine
+    if fdbg and fdbg.combineMemory and fdbg.combineMemory.machineType == "forage" then
+        local _, fillUnitIndex, fillLevelDelta, fillTypeIndex = ...
+        local ftName = "nil"
+        if fillTypeIndex and g_fillTypeManager then
+            local ftd = g_fillTypeManager:getFillTypeByIndex(fillTypeIndex)
+            if ftd then ftName = ftd.name or "?" end
+        end
+        local isCutting = (fdbg.totalCumulativeArea or 0) > (fdbg.prevCumulativeArea or 0)
+        print(string.format(
+            "RHM: [FORAGE-FILL] unit=%s fillType=%s delta=%.3f actualAdded=%s isCutting=%s totalArea=%.6f prevArea=%.6f lastLiters=%.3f",
+            tostring(fillUnitIndex), ftName, fillLevelDelta or 0, tostring(actualAdded),
+            tostring(isCutting),
+            fdbg.totalCumulativeArea or 0, fdbg.prevCumulativeArea or 0,
+            fdbg.lastLiters or 0))
+    end
+    -- ────────────────────────────────────────────────────────────────────────
+
     local spec = self.spec_rhm_Combine
     if spec and actualAdded and type(actualAdded) == "number" and actualAdded > 0 then
-        -- EN: Count liters only when the cutter is actively cutting (totalCumulativeArea is growing).
-        --     This filters out non-harvest fill changes (offloading, sync corrections, transfers).
-        --     BUG FIX: the old guard (spec.lastRawArea > 0) always evaluated to false because
-        --     lastRawArea was never assigned after the area tracking refactor. This caused
-        --     lastLiters to be permanently 0, forcing the mod to use the less accurate
-        --     _fallbackLiters from addCutterArea (pre-loss gross liters instead of net hopper liters).
-        -- UA: Рахуємо літри тільки коли жатка активно ріже (totalCumulativeArea зростає).
+        -- EN: Count liters only when the machine is actively harvesting.
+        --
+        --     isCutting path (grain combines + direct-cut forage like corn silage):
+        --       totalCumulativeArea grows each tick via addCutterArea → isCutting = true.
+        --       Filters out auger-unload and tank-sync events (area stops growing when idle).
+        --
+        --     isForagePickup path (pickup forage headers picking up windrows):
+        --       Pickup heads collect windrows by removing the fill-type density map directly —
+        --       they NEVER call addCutterArea, so totalCumulativeArea is permanently 0 and
+        --       isCutting is permanently false even while material is flowing.
+        --       For forage machines in this state we trust actualAdded > 0 on a non-UNKNOWN
+        --       fill type as the harvest signal.  Forage harvesters have no external fill
+        --       source that could produce false positives here (no auger-unload into self).
+        --
+        -- UA: Рахуємо літри тільки при активному збиранні.
+        --     isCutting — для зернових та прямого зрізу форажних.
+        --     isForagePickup — для підбиральних форажних голівок (підбирач валків).
         local isCutting = (spec.totalCumulativeArea or 0) > (spec.prevCumulativeArea or 0)
-        if isCutting then
+
+        local farmId, fillUnitIndex, fillLevelDelta, fillTypeIndex, toolType, fillPositionData = ...
+        local pickupCropName = nil
+        if spec.combineMemory
+           and spec.combineMemory.machineType == "forage"
+           and fillTypeIndex ~= nil
+           and fillTypeIndex ~= FillType.UNKNOWN
+           and CombineSettingsDatabase then
+            pickupCropName = CombineSettingsDatabase:getCropNameFromFillType(fillTypeIndex)
+        end
+
+        local isForagePickup = pickupCropName ~= nil and spec._foragePickupFillReady == true
+
+        if isCutting or isForagePickup then
             spec.lastLiters = (spec.lastLiters or 0) + actualAdded
 
-            local farmId, fillUnitIndex, fillLevelDelta, fillTypeIndex, toolType, fillPositionData = ...
             if fillTypeIndex and fillTypeIndex ~= FillType.UNKNOWN then
-                 spec.lastFillType = fillTypeIndex
+                spec.lastFillType = fillTypeIndex
+
+                -- EN: For forage pickup: addCutterArea is never called so currentCrop is never
+                --     set via the normal path.  Derive it from the output fill type here so the
+                --     forage throughput curve and HUD crop label both resolve correctly.
+                --     (Direct-cut forage sets currentCrop in addCutterArea; this block is a no-op
+                --     for that path because isCutting=true but isForagePickup is skipped.)
+                -- UA: Для форажного підбирача: addCutterArea не викликається — встановлюємо
+                --     currentCrop з типу наповнення щоб крива продуктивності та HUD відображали
+                --     правильну культуру.
+                if isForagePickup and not isCutting then
+                    local cropName = pickupCropName
+                    local currentCrop = spec.combineMemory and spec.combineMemory.currentCrop
+                    if currentCrop == "TRITICALE_WINDROW" or currentCrop == "TRITICALE_FORAGE" then
+                        local outName = nil
+                        if g_fillTypeManager then
+                            local outDesc = g_fillTypeManager:getFillTypeByIndex(fillTypeIndex)
+                            outName = outDesc and outDesc.name and string.upper(outDesc.name) or nil
+                        end
+                        if outName == "GRASS_WINDROW" or outName == "GRASS" then
+                            cropName = currentCrop
+                        end
+                    end
+                    if currentCrop == "PINTOBEAN_FORAGE" then
+                        local outName = nil
+                        if g_fillTypeManager then
+                            local outDesc = g_fillTypeManager:getFillTypeByIndex(fillTypeIndex)
+                            outName = outDesc and outDesc.name and string.upper(outDesc.name) or nil
+                        end
+                        if outName == "CHAFF" then
+                            cropName = currentCrop
+                        end
+                    end
+                    if cropName and spec.loadCalculator then
+                        spec.loadCalculator.currentCrop = cropName
+                    end
+                    if cropName and spec.combineMemory
+                       and cropName ~= spec.combineMemory.currentCrop then
+                        -- EN: Immediate switch — no debounce needed here; fill-type changes
+                        --     only happen when the user physically changes what windrow the
+                        --     machine is picking up, not tick-by-tick noise.
+                        -- UA: Негайне перемикання — захист від дребезгу тут не потрібен.
+                        rhm_Combine.onCropTypeChanged(self, cropName)
+                    end
+                end
             end
         end
     end
     
     return r1, r2, r3, r4, r5, r6
+end
+
+-- EN: Returns true when the attached cutter is a pickup-type header that collects windrowed
+--     material (e.g. PICKUPHEADER_GRASS / hay pickup). Pickup headers are identified by having
+--     spec_cutter.fillTypeConverter set — this is the FS25 mechanism that routes windrow
+--     fill-type → harvester output and is absent on all direct-cut headers.
+--
+--     Why this matters for yield: the game's pixel-harvest area for a pickup header reflects
+--     only the narrow physical pickup width (~12 ft / 3.65 m), NOT the original swath width
+--     (e.g. 48 ft) that determined the crop mass.  Using pixel area here inflates yield ~4×.
+--     When this function returns true, onUpdateTick uses (distance × manual swathWidth) instead.
+-- UA: Повертає true коли підключена жатка є підбирачем валків (PICKUPHEADER_GRASS тощо).
+--     Підбирачі ідентифікуються за наявністю spec_cutter.fillTypeConverter — механізм FS25,
+--     що маршрутизує fill-тип валка → вивід комбайна; відсутній у всіх жатках прямого зрізу.
+local function isPickupHeader(vehicle)
+    local sc = vehicle.spec_combine
+    if not sc or not sc.attachedCutters then return false end
+    for cutter, _ in pairs(sc.attachedCutters) do
+        if cutter.spec_cutter and cutter.spec_cutter.fillTypeConverter ~= nil then
+            return true
+        end
+    end
+    return false
 end
 
 -- EN: Override for addCutterArea — intercepts the raw (pixel-count) cutting area per tick.
@@ -511,11 +621,42 @@ function rhm_Combine:addCutterArea(superFunc, ...)
     -- UA: Викликаємо super спочатку щоб отримати реальні дані (літри, тип культури) перед перехопленням.
     local r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 = superFunc(self, ...)
     local retLiters = r1
-    
+
     local spec = self.spec_rhm_Combine
     if not spec or not spec.loadCalculator then
         return r1, r2, r3, r4, r5, r6, r7, r8, r9, r10
     end
+
+    -- ── FORAGE-CUT diagnostic ────────────────────────────────────────────────
+    -- Fires on every addCutterArea call for forage machines.
+    -- "area"     = pixel count passed by the cutter (2nd variadic arg in FS25 = area pixels)
+    -- "liters_in"= liters the cutter computed before passing to Combine (3rd variadic arg)
+    -- "retLiters"= what base-game Combine:addCutterArea returned (this feeds _fallbackLiters)
+    -- If retLiters is always 0 while area > 0, the base game is short-circuiting the return.
+    if spec.combineMemory and spec.combineMemory.machineType == "forage" then
+        local _area, _litersIn, _inFT, _outFT = ...
+        local outName, inName = "nil", "nil"
+        if _outFT and g_fillTypeManager then
+            local ftd = g_fillTypeManager:getFillTypeByIndex(_outFT)
+            if ftd then outName = ftd.name or "?" end
+        end
+        if _inFT and g_fruitTypeManager then
+            local ftd = g_fruitTypeManager:getFruitTypeByIndex(_inFT)
+            if ftd then inName = ftd.name or "?" end
+        end
+        -- throttle: print every 30 calls so the log stays readable but dense
+        spec._cutDbgCount = (spec._cutDbgCount or 0) + 1
+        if spec._cutDbgCount % 30 == 1 then
+            print(string.format(
+                "RHM: [FORAGE-CUT #%d] area=%.4f liters_in=%.4f out=%s(%s) in=%s(%s) retLiters=%.4f fallbackAcc=%.4f",
+                spec._cutDbgCount,
+                _area or 0, _litersIn or 0,
+                tostring(_outFT), outName, tostring(_inFT), inName,
+                retLiters or 0,
+                (spec._fallbackLiters or 0)))
+        end
+    end
+    -- ────────────────────────────────────────────────────────────────────────
     
     -- EN: lastMultiplier kept for compatibility with older logic paths.
     -- UA: lastMultiplier збережено для сумісності зі старими логічними шляхами.
@@ -536,26 +677,37 @@ function rhm_Combine:addCutterArea(superFunc, ...)
     --     (for windrow pickup work), scale area so yield reflects the original cutting width
     --     rather than the narrow pickup header width.
     --     correction = swathWidth / headerWorkWidth. Only applied when swathWidth is set.
+    --
+    --     For pickup headers (isPickupHeader == true) we skip this block entirely:
+    --     onUpdateTick calculates area as (distance × swathWidth) which already embeds the
+    --     correct width.  Applying a pixel-area correction here as well would double-count.
     if spec.combineMemory and spec.combineMemory.swathWidth and spec.combineMemory.swathWidth > 0 then
-        -- EN: Walk attached cutters to find the working header width.
-        --     spec_combine.attachedCutters is the authoritative FS25 source; spec.combine is nil.
-        -- UA: Обходимо підключені жатки щоб знайти робочу ширину заголовника.
-        local headerW = 0
-        local sc = self.spec_combine
-        if sc and sc.attachedCutters then
-            for c, _ in pairs(sc.attachedCutters) do
-                local wa = c.spec_workArea
-                if wa and wa.workAreas and wa.workAreas[1] then
-                    headerW = wa.workAreas[1].workWidth or 0
+        if isPickupHeader(self) then
+            -- EN: Pickup header — area will be computed geometrically in onUpdateTick.
+            --     No pixel-area correction needed or desired here.
+            -- UA: Підбирач — площа буде розрахована геометрично в onUpdateTick.
+            --     Корекція піксельної площі тут не потрібна.
+        else
+            -- EN: Walk attached cutters to find the working header width.
+            --     spec_combine.attachedCutters is the authoritative FS25 source; spec.combine is nil.
+            -- UA: Обходимо підключені жатки щоб знайти робочу ширину заголовника.
+            local headerW = 0
+            local sc = self.spec_combine
+            if sc and sc.attachedCutters then
+                for c, _ in pairs(sc.attachedCutters) do
+                    local wa = c.spec_workArea
+                    if wa and wa.workAreas and wa.workAreas[1] then
+                        headerW = wa.workAreas[1].workWidth or 0
+                    end
+                    if headerW <= 0 and type(c.getWorkAreaWidth) == "function" then
+                        headerW = c:getWorkAreaWidth(1) or 0
+                    end
+                    if headerW > 0 then break end
                 end
-                if headerW <= 0 and type(c.getWorkAreaWidth) == "function" then
-                    headerW = c:getWorkAreaWidth(1) or 0
-                end
-                if headerW > 0 then break end
             end
-        end
-        if headerW > 0.5 then
-            areaForYield = areaForYield * (spec.combineMemory.swathWidth / headerW)
+            if headerW > 0.5 then
+                areaForYield = areaForYield * (spec.combineMemory.swathWidth / headerW)
+            end
         end
     end
 
@@ -646,14 +798,37 @@ function rhm_Combine:addCutterArea(superFunc, ...)
         spec._pendingCrop = nil
     end
     
-    -- DEBUG: Uncomment to see values in console
-    -- if (retLiters or 0) > 0 and areaForYield > 0 then
-    --    local areaHa = areaForYield / 10000
-    --    local yieldL_Ha = retLiters / areaHa
-    --    print(string.format("RHM YIELD DEBUG: Liters=%.2f, Area=%.4f m2, Yield=%.0f L/ha", 
-    --        retLiters, areaForYield, yieldL_Ha))
-    -- end
-    
+    -- EN: One-shot cut-area diagnostic — fires once per unique (outputFillType, inputFruitType) pair.
+    --     Always active (no debug flag needed). Search log for "[CUT-DIAG]" when a new windrow
+    --     crop produces no yield/load: it shows exactly what fill type and fruit type the game
+    --     passed, letting you add the missing entry to CombineSettingsDatabase.fillTypeMapping.
+    -- UA: Одноразова діагностика зрізу — спрацьовує один раз на унікальну пару типів.
+    if areaForYield > 0 then
+        if not spec._cutDiagPrinted then spec._cutDiagPrinted = {} end
+        local diagKey = tostring(outputFillType) .. "_" .. tostring(inputFruitType)
+        if not spec._cutDiagPrinted[diagKey] then
+            spec._cutDiagPrinted[diagKey] = true
+            local outName, inName = "nil", "nil"
+            if g_fillTypeManager and outputFillType then
+                local ftd = g_fillTypeManager:getFillTypeByIndex(outputFillType)
+                if ftd then outName = ftd.name or "?" end
+            end
+            if g_fruitTypeManager and inputFruitType then
+                local ftd = g_fruitTypeManager:getFruitTypeByIndex(inputFruitType)
+                if ftd then inName = ftd.name or "?" end
+            end
+            local detectedCrop = spec.loadCalculator and spec.loadCalculator.currentCrop or "nil"
+            print(string.format(
+                "RHM: [CUT-DIAG] outputFillType=%s(%s) inputFruitType=%s(%s) retLiters=%.2f area=%.4f detectedCrop=%s machineType=%s",
+                tostring(outputFillType), outName,
+                tostring(inputFruitType), inName,
+                retLiters or 0,
+                areaForYield,
+                detectedCrop,
+                tostring(spec.combineMemory and spec.combineMemory.machineType or "nil")))
+        end
+    end
+
     return r1, r2, r3, r4, r5, r6, r7, r8, r9, r10
 end
 
@@ -1062,6 +1237,7 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
     if not spec or not spec.loadCalculator then
         return
     end
+    spec._foragePickupFillReady = true
 
     -- EN: Tick the time-of-day moisture update BEFORE any early-return paths so the
     --     HUD's moistureLabel / moisturePercent are refreshed even when the cutter is
@@ -1164,7 +1340,23 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
     -- UA: Розраховуємо зібрану масу з літрів + густини fillType. Форажні комбайни використовують запасні літри.
     local massKg = 0
     local liters = spec.lastLiters or 0
-    
+
+    -- ── FORAGE-TICK diagnostic (pre-mass) ────────────────────────────────────
+    if spec.combineMemory and spec.combineMemory.machineType == "forage" then
+        spec._tickDbgCount = (spec._tickDbgCount or 0) + 1
+        if spec._tickDbgCount % 30 == 1 then
+            print(string.format(
+                "RHM: [FORAGE-TICK #%d] lastLiters=%.4f _fallbackLiters=%.4f lastFillType=%s totalCumArea=%.6f prevCumArea=%.6f",
+                spec._tickDbgCount,
+                spec.lastLiters or 0,
+                spec._fallbackLiters or 0,
+                tostring(spec.lastFillType),
+                spec.totalCumulativeArea or 0,
+                spec.prevCumulativeArea or 0))
+        end
+    end
+    -- ────────────────────────────────────────────────────────────────────────
+
     -- EN: Fall back to liters captured by addCutterArea for forage harvesters (no hopper).
     -- UA: Використовуємо запасні літри з addCutterArea для форажних комбайнів (без бункера).
     if liters <= 0 and (spec._fallbackLiters or 0) > 0 then
@@ -1182,6 +1374,17 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
         --     до надмірно завищеної врожайності та навантаження двигуна для цих культур.
         local density = UnitConverter and UnitConverter.getCropDensityKgL
                         and UnitConverter.getCropDensityKgL(spec.lastFillType)
+        if density
+           and spec.combineMemory
+           and spec.combineMemory.currentCrop == "PINTOBEAN_FORAGE"
+           and g_fillTypeManager
+           and spec.lastFillType then
+            local ft = g_fillTypeManager:getFillTypeByIndex(spec.lastFillType)
+            local ftName = ft and ft.name and string.upper(ft.name) or nil
+            if ftName == "CHAFF" then
+                density = 0.150
+            end
+        end
         if density then
             massKg = liters * density
             -- EN: One-time diagnostic per fill type — confirms the density table is hit and
@@ -1227,6 +1430,19 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
         end
     end
     
+    -- ── FORAGE-MASS diagnostic (post-density) ───────────────────────────────
+    if spec.combineMemory and spec.combineMemory.machineType == "forage" then
+        if (spec._tickDbgCount or 0) % 30 == 1 then
+            local srcLabel = (spec.lastLiters or 0) > 0 and "hopper" or ((spec._fallbackLiters or 0) > 0 and "fallback" or "NONE")
+            print(string.format(
+                "RHM: [FORAGE-MASS #%d] liters=%.4f massKg=%.6f lastFillType=%s src=%s",
+                spec._tickDbgCount or 0,
+                liters, massKg,
+                tostring(spec.lastFillType), srcLabel))
+        end
+    end
+    -- ────────────────────────────────────────────────────────────────────────
+
     -- EN: Per-tick area — delta of the monotonic cumulative counter since last tick.
     --     Used for the isCutting guard and engine load calculations, NOT for yield display.
     -- UA: Площа за тік — різниця монотонного лічильника з минулого тіку.
@@ -1277,13 +1493,49 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
             end
         end
 
-        -- EN: PRIMARY: pixel area — actual m² of terrain cleared this tick by addCutterArea callbacks.
-        -- UA: PRIMARY: піксельна площа — реальні m² ґрунту за тік від зворотних викликів addCutterArea.
-        if pixelAreaDelta > 0 then
+        -- EN: PRIMARY (pickup header): distance × manual swath width.
+        --     For pickup headers the game pixel-area reflects only the narrow pickup aperture
+        --     (~12 ft), while the harvested mass came from a swath that may be 4× wider.
+        --     Using pixel area here would inflate yield by that ratio.  When the user has set
+        --     a manual swath width we always prefer the geometric calculation.
+        -- UA: PRIMARY (підбирач): відстань × ручна ширина валка.
+        --     Для підбирачів піксельна площа відповідає вузькій апертурі підбирача (~12 фт),
+        --     тоді як зібрана маса надійшла з ширшого валка (може бути в 4 рази ширше).
+        --     Використання піксельної площі тут роздуває врожайність на цей коефіцієнт.
+        local swathW = spec.combineMemory and spec.combineMemory.swathWidth
+        local _isPickup = isPickupHeader(self)
+        if _isPickup and swathW and swathW > 0 then
+            local dist = self.lastMovedDistance or 0
+            areaForYield = dist * swathW
+            -- EN: Diagnostic — throttled to every 120 ticks so the log stays readable.
+            spec._pickupDbgCount = (spec._pickupDbgCount or 0) + 1
+            if spec._pickupDbgCount % 120 == 1 then
+                print(string.format(
+                    "RHM: [PICKUP-AREA #%d] isPickup=true swathW=%.3fm dist=%.4fm areaForYield=%.4fm²",
+                    spec._pickupDbgCount, swathW, dist, areaForYield))
+            end
+        elseif _isPickup and (not swathW or swathW <= 0) then
+            -- EN: Pickup header detected but no manual swath width set — warn once, use cached width as best-effort.
+            -- UA: Підбирач виявлено, але ширина валка не вказана — попереджаємо, використовуємо кешовану ширину.
+            if not spec._pickupNoSwathWarned then
+                spec._pickupNoSwathWarned = true
+                print("RHM: [PICKUP-AREA] WARNING — pickup header detected but no manual swath width set. " ..
+                      "Please set your swath width in the Calibration GUI for accurate yield. " ..
+                      "Falling back to pixel/cached area (yield will be inflated).")
+            end
+            if pixelAreaDelta > 0 then
+                areaForYield = pixelAreaDelta
+            elseif spec._cachedCutWidth and spec._cachedCutWidth > 0 then
+                local dist = self.lastMovedDistance or 0
+                areaForYield = dist * spec._cachedCutWidth
+            end
+        elseif pixelAreaDelta > 0 then
+            -- EN: PRIMARY (direct-cut): pixel area — actual m² of terrain cleared this tick.
+            -- UA: PRIMARY (пряме зрізання): піксельна площа — реальні m² ґрунту за тік.
             areaForYield = pixelAreaDelta
         elseif spec._cachedCutWidth and spec._cachedCutWidth > 0 then
-            -- EN: FALLBACK: geometric area when no cutter pixels detected (e.g. windrow pickup header).
-            -- UA: FALLBACK: геометрична площа коли піксели жатки не виявлені (наприклад, підбирач).
+            -- EN: FALLBACK: geometric area when no cutter pixels detected.
+            -- UA: FALLBACK: геометрична площа коли піксели жатки не виявлені.
             local dist = self.lastMovedDistance or 0
             areaForYield = dist * spec._cachedCutWidth
         end

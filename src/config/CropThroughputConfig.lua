@@ -25,6 +25,13 @@
 
 CropThroughputConfig = {}
 
+-- EN: Capture mod directory at source-time, before g_currentModDirectory is overwritten by
+--     subsequently loaded mods. By the time CropThroughputConfig.load() is called (post-mission),
+--     g_currentModDirectory belongs to a different mod entirely — using it to build the bundled
+--     XML path would point at the wrong folder and always fail.
+-- UA: Зберігаємо директорію мода при завантаженні файлу, поки g_currentModDirectory ще вказує на RHM.
+local RHM_MOD_DIR = g_currentModDirectory or ""
+
 -- EN: Loaded curve params per crop: cropKey → { coef=A, exp=B }
 -- UA: Параметри кривої по культурах: назва → { coef=A, exp=B }
 CropThroughputConfig._data   = {}
@@ -91,7 +98,9 @@ local function getConfigPath()
         return userPath, "user"
     end
     -- EN: Bundled default shipped with the mod.
-    local bundledPath = (g_currentModDirectory or "") .. "cropThroughput.xml"
+    --     Uses RHM_MOD_DIR (captured at source-time) NOT g_currentModDirectory,
+    --     which is overwritten by other mods by the time load() is called.
+    local bundledPath = RHM_MOD_DIR .. "cropThroughput.xml"
     if fileExists(bundledPath) then
         return bundledPath, "bundled"
     end
@@ -206,7 +215,7 @@ function CropThroughputConfig.load()
         MoistureCalculator.loadFromXML(xmlFile)
     end
 
-    deleteXMLFile(xmlFile)
+    delete(xmlFile)
     CropThroughputConfig._loaded = true
     CropThroughputConfig._source = source
 
@@ -247,7 +256,20 @@ end
 -- ---------------------------------------------------------------------------
 function CropThroughputConfig.getForageCurveParams(cropName)
     if not cropName then return nil end
-    return CropThroughputConfig._forageData[cropName:lower()]
+    local key = cropName:lower()
+    local entry = CropThroughputConfig._forageData[key]
+    if entry then return entry end
+
+    -- EN: Safety fallback — strip "_windrow" or "_chopped" suffix and retry.
+    --     Handles cases where CombineSettingsDatabase hasn't yet remapped the
+    --     windrow fill-type key to the base crop name (e.g. "grass_windrow" → "grass").
+    -- UA: Запасний варіант — відкидаємо суфікс "_windrow"/"_chopped" і шукаємо знову.
+    local stripped = key:match("^(.-)_windrow$") or key:match("^(.-)_chopped$") or key:match("^(.-)_forage$")
+    if stripped then
+        return CropThroughputConfig._forageData[stripped]
+    end
+
+    return nil
 end
 
 -- ---------------------------------------------------------------------------
