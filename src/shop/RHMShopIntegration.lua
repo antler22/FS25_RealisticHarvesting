@@ -104,9 +104,8 @@ if g_vehicleConfigurationManager
         dbgf("addConfigurationType: FAILED — %s", tostring(err))
     end
 
-    print("RHM: [Shop] Registered rhm_upgradeTier configuration type")
 else
-    print("RHM: [Shop] WARNING — could not register rhm_upgradeTier (VehicleConfigurationItem unavailable at load time)")
+    Logging.warning("[RHM] Shop: could not register rhm_upgradeTier (VehicleConfigurationItem unavailable at load time)")
     dbgf("  g_vehicleConfigurationManager = %s", tostring(g_vehicleConfigurationManager))
     dbgf("  VehicleConfigurationItem      = %s", tostring(VehicleConfigurationItem))
 end
@@ -123,7 +122,7 @@ end
 --     produces a no-op and we'd never see any injection logs at all.
 dbgf("StoreManager.addItem type before hook: %s", type(StoreManager.addItem))
 if type(StoreManager.addItem) ~= "function" then
-    print("RHM: [Shop] WARNING — StoreManager.addItem is not a function, per-item injection will NOT fire")
+    Logging.warning("[RHM] Shop: StoreManager.addItem is not a function — per-item injection will not fire")
 end
 
 -- EN: Running total so we can print a summary after the map finishes loading.
@@ -173,9 +172,7 @@ StoreManager.loadMapData = Utils.appendedFunction(StoreManager.loadMapData, func
     dbgf("=== loadMapData complete — %d combine(s) injected via addItem ===", _rhmInjectCount)
 
     if _rhmInjectCount == 0 then
-        print("RHM: [Shop] WARNING — 0 combines were injected. addItem hook may not have fired.")
-    else
-        print(string.format("RHM: [Shop] %d combine storeItem(s) received rhm_upgradeTier config", _rhmInjectCount))
+        Logging.warning("[RHM] Shop: 0 combines were injected — addItem hook may not have fired")
     end
 
     -- EN: Walk the live items table and verify the config survived on at least one combine.

@@ -178,9 +178,7 @@ function CombineCalibrationGUI:open(vehicle)
         local found = findCombine(vehicle.rootVehicle or vehicle, {})
         if found then
             combineVehicle = found
-            print(string.format("RHM: [GUI] NEXAT: found combine vehicle in hierarchy: %s", tostring(combineVehicle)))
         else
-            print("RHM: [GUI] No combine with spec_rhm_Combine found in vehicle hierarchy — GUI will not open")
             return
         end
     end
@@ -319,10 +317,6 @@ function CombineCalibrationGUI:update(dt)
     end
 
     if not isEntered then
-        print("RHM: [GUI] Closing due to isEntered=false."
-            .. " RHM_cv=" .. tostring(g_realisticHarvestManager and g_realisticHarvestManager:getControlledVehicle())
-            .. " vToCheck=" .. tostring(vehicleToCheck)
-            .. " (root=" .. tostring(vehicleToCheck and (vehicleToCheck.rootVehicle or vehicleToCheck)) .. ")")
         self:close()
     end
 end
@@ -578,8 +572,6 @@ function CombineCalibrationGUI:draw()
     local cropNavX = x + ui.margin + 0.030
     local arrowW = 0.020
     self:drawButton(cropNavX, cy + 0.004, arrowW, ui.buttonH, "<", function()
-        print(string.format("RHM: [GUI] Crop cycle LEFT clicked | displayedCrop=%s | currentCrop=%s",
-            tostring(self.displayedCrop), tostring(memory.currentCrop)))
         self:cycleCrop(-1)
     end)
 
@@ -597,8 +589,6 @@ function CombineCalibrationGUI:draw()
     renderText(cropNavX + arrowW + 0.052, cy + 0.010, ui.fontSize, cropName)
 
     self:drawButton(cropNavX + arrowW + 0.104, cy + 0.004, arrowW, ui.buttonH, ">", function()
-        print(string.format("RHM: [GUI] Crop cycle RIGHT clicked | displayedCrop=%s | currentCrop=%s",
-            tostring(self.displayedCrop), tostring(memory.currentCrop)))
         self:cycleCrop(1)
     end)
 
@@ -619,8 +609,6 @@ function CombineCalibrationGUI:draw()
             and {0.20, 0.75, 0.30, 0.90}
             or  ui.colors.buttonAuto
         self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, autoLabel, function()
-            print(string.format("RHM: [GUI] AUTO button clicked | prevMode=%s | isAutoOn=%s",
-                tostring(memory.mode), tostring(isAutoOn)))
             memory:requestAutoSettings()
         end, autoColor)
     elseif displayCrop then
@@ -630,8 +618,6 @@ function CombineCalibrationGUI:draw()
         local loadColor = isPreviewing and {0.06, 0.20, 0.06, 1.0} or ui.colors.button
         self:drawButton(autoBtnX, cy + 0.003, autoBtnW, ui.buttonH + 0.003, "LOAD", function()
             local target = self.displayedCrop or memory.currentCrop
-            print(string.format("RHM: [GUI] LOAD button clicked | displayedCrop=%s | currentCrop=%s | target=%s",
-                tostring(self.displayedCrop), tostring(memory.currentCrop), tostring(target)))
             if target then
                 memory:switchCrop(target)
                 -- EN: Sync displayedCrop — now the active and displayed crops match.
@@ -815,11 +801,8 @@ function CombineCalibrationGUI:draw()
         -- EN: Reset Session button.
         cy = cy - ui.lineHeight * 0.75  -- was 0.85
         self:drawButton(x + ui.margin, cy, w - ui.margin * 2, 0.020, "RESET SESSION", function()
-            print(string.format("RHM: [GUI] RESET SESSION button clicked | loadCalculator=%s",
-                tostring(spec.loadCalculator ~= nil)))
             if spec.loadCalculator then
                 spec.loadCalculator:resetSession()
-                print("RHM: [GUI] RESET SESSION — loadCalculator:resetSession() complete")
             end
         end, {0.15, 0.08, 0.05, 0.90})
 
@@ -860,8 +843,6 @@ function CombineCalibrationGUI:draw()
         local cur  = memory.swathWidth or 0
         local newW = math.max(0, cur - stepM)
         local finalW = (newW < stepM * 0.5) and nil or newW
-        print(string.format("RHM: [GUI] SWATH MINUS clicked | cur=%.3f m | stepM=%.3f | newW=%.3f | final=%s",
-            cur, stepM, newW, tostring(finalW)))
         memory.swathWidth = finalW
     end, ui.colors.button)
     -- EN: Plus button — increase swath width.
@@ -869,8 +850,6 @@ function CombineCalibrationGUI:draw()
         local cur  = memory.swathWidth or 0
         local newW = math.max(stepM, cur + stepM)
         local finalW = math.min(newW, 50)  -- EN: cap at 50 m / ~164 ft
-        print(string.format("RHM: [GUI] SWATH PLUS clicked | cur=%.3f m | stepM=%.3f | newW=%.3f | final=%.3f",
-            cur, stepM, newW, finalW))
         memory.swathWidth = finalW
     end, ui.colors.button)
 
@@ -880,34 +859,18 @@ function CombineCalibrationGUI:draw()
     local btnWidth = (w - ui.margin * 2.5 - 0.008) / 2
 
     self:drawButton(x + ui.margin, cy, btnWidth, 0.022, g_i18n:getText("rhm_gui_btn_load_preset"), function()
-        print(string.format("RHM: [GUI] LOAD PRESET button clicked | currentCrop=%s | mode=%s | tier=%s",
-            tostring(memory.currentCrop), tostring(memory.mode), tostring(memory.upgradeLevel)))
         memory:loadUserPreset()
-        print("RHM: [GUI] LOAD PRESET — memory:loadUserPreset() complete")
     end, ui.colors.button)
 
     self:drawButton(x + w - ui.margin - btnWidth, cy, btnWidth, 0.022, g_i18n:getText("rhm_gui_btn_save"), function()
-        print(string.format("RHM: [GUI] SAVE PROFILE button clicked | currentCrop=%s | mode=%s | tier=%s | autoSwitch=%s",
-            tostring(memory.currentCrop), tostring(memory.mode),
-            tostring(memory.upgradeLevel), tostring(memory.autoSwitchEnabled)))
-        if memory.currentSettings then
-            print(string.format("RHM: [GUI] SAVE PROFILE — current settings fan=%s upper=%s lower=%s rotor=%s concave=%s",
-                tostring(memory.currentSettings.fan), tostring(memory.currentSettings.upperSieve),
-                tostring(memory.currentSettings.lowerSieve), tostring(memory.currentSettings.rotor),
-                tostring(memory.currentSettings.concave)))
-        end
         memory:saveCurrentProfile(memory.currentCrop)
-        print("RHM: [GUI] SAVE PROFILE — memory:saveCurrentProfile() complete")
     end, ui.colors.buttonSave)
 
     -- Row 2: Reset Default
     cy = cy - ui.lineHeight * 1.0
     local resetBtnW = w - ui.margin * 2
     self:drawButton(x + ui.margin, cy, resetBtnW, 0.022, g_i18n:getText("rhm_gui_btn_reset"), function()
-        print(string.format("RHM: [GUI] RESET DEFAULT button clicked | currentCrop=%s | mode=%s",
-            tostring(memory.currentCrop), tostring(memory.mode)))
         memory:requestResetSettings()
-        print("RHM: [GUI] RESET DEFAULT — memory:requestResetSettings() complete")
     end, ui.colors.buttonReset)
 
     -- ── Scroll wheel handling ───────────────────────────────────────────────
@@ -1160,23 +1123,11 @@ function CombineCalibrationGUI:drawParameterRow(x, y, w, param, label, memory, u
 
     -- ── [-] and [+] buttons ────────────────────────────────────────────────
     self:drawButton(btnStartX, y + 0.004, ui.buttonW, ui.buttonH, "-", function()
-        local before = memory.currentSettings[param] or 0
-        print(string.format("RHM: [GUI] PARAM MINUS clicked | param=%s | before=%s | crop=%s | mode=%s",
-            tostring(param), tostring(before), tostring(memory.currentCrop), tostring(memory.mode)))
         performSmartStep(-1)
-        local after = memory.currentSettings[param] or 0
-        print(string.format("RHM: [GUI] PARAM MINUS done    | param=%s | after=%s | delta=%s",
-            tostring(param), tostring(after), tostring(after - before)))
     end)
 
     self:drawButton(btnStartX + ui.buttonW + 0.004, y + 0.004, ui.buttonW, ui.buttonH, "+", function()
-        local before = memory.currentSettings[param] or 0
-        print(string.format("RHM: [GUI] PARAM PLUS  clicked | param=%s | before=%s | crop=%s | mode=%s",
-            tostring(param), tostring(before), tostring(memory.currentCrop), tostring(memory.mode)))
         performSmartStep(1)
-        local after = memory.currentSettings[param] or 0
-        print(string.format("RHM: [GUI] PARAM PLUS  done    | param=%s | after=%s | delta=%s",
-            tostring(param), tostring(after), tostring(after - before)))
     end)
 end
 
@@ -1386,4 +1337,3 @@ function CombineCalibrationGUI:getParameterAtMouse(x, y)
     return nil
 end
 
-print("[OK] CombineCalibrationGUI loaded")

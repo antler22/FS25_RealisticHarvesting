@@ -276,13 +276,4 @@ function MoistureCalculator.loadFromXML(xmlFile)
         i = i + 1
     end
 
-    Logging.info(string.format(
-        "[RHM] MoistureCalculator: loaded from XML — load=%s loss=%s speed=%s | maxLoad=%.2f maxLoss=%.2f maxSpeed=%.2f dryBonus=%.2f",
-        tostring(MoistureCalculator.enableLoad),
-        tostring(MoistureCalculator.enableLoss),
-        tostring(MoistureCalculator.enableSpeed),
-        MoistureCalculator.maxLoadFactor,
-        MoistureCalculator.maxLossFactor,
-        MoistureCalculator.maxSpeedReduction,
-        MoistureCalculator.dryBonusFactor))
 end

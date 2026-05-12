@@ -68,11 +68,6 @@ function SettingsSyncEvent:run(connection)
 
         local settings = g_realisticHarvestManager.settings
         if settings then
-            if RHM_Debug and RHM_Debug.isEnabled("Network") then
-                print(string.format("RHM: [Sync] Server APPLYING settings - Motor: %d, Loss: %d, CropLoss: %s, IndLaunch: %s",
-                    self.difficultyMotor, self.difficultyLoss, tostring(self.enableCropLoss), tostring(self.enableIndependentLaunch)))
-            end
-
             -- EN: Apply the received split difficulty fields and feature flags.
             -- UA: Застосовуємо отримані розділені поля складності та прапорці функцій.
             settings.difficultyMotor = self.difficultyMotor
@@ -90,7 +85,7 @@ function SettingsSyncEvent:run(connection)
             -- UA: Ретранслюємо зміни всім іншим підключеним клієнтам.
             g_server:broadcastEvent(self, nil, connection, nil)
         else
-            print("RHM: [Sync] ERROR - g_realisticHarvestManager.settings is nil!")
+            Logging.error("[RHM] SettingsSyncEvent: g_realisticHarvestManager.settings is nil")
         end
         return
     end
@@ -106,11 +101,6 @@ function SettingsSyncEvent:run(connection)
             settings.difficultyLoss = self.difficultyLoss
             settings.enableCropLoss = self.enableCropLoss
             settings.enableIndependentLaunch = self.enableIndependentLaunch
-
-            if RHM_Debug and RHM_Debug.isEnabled("Network") then
-                print(string.format("RHM: [Sync] Client received update - Motor: %d, Loss: %d, CropLoss: %s, IndLaunch: %s",
-                    self.difficultyMotor, self.difficultyLoss, tostring(self.enableCropLoss), tostring(self.enableIndependentLaunch)))
-           end
         end
     end
 end

@@ -12,10 +12,8 @@ MoistureAdapter.isActive = false
 function MoistureAdapter.initialize()
     if g_currentMission ~= nil and g_currentMission.MoistureSystem ~= nil then
         MoistureAdapter.isActive = true
-        Logging.info("[RHM] MoistureAdapter: external 'Moisture System' mod detected — grain moisture enabled.")
     else
         MoistureAdapter.isActive = false
-        Logging.info("[RHM] MoistureAdapter: 'Moisture System' mod not found — grain moisture disabled.")
     end
 end
 

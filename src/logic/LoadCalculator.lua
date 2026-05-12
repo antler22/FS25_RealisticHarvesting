@@ -102,10 +102,7 @@ function LoadCalculator.new(modDirectory)
     self.currentCrop = nil    -- EN: Current crop for loss calc / UA: Поточна культура для розрахунку втрат
     
     self.debug = RHM_Debug and RHM_Debug.isEnabled("LoadCalculator") or false
-    if self.debug then
-        print("RHM: LoadCalculator initialized")
-    end
-    
+
     return self
 end
 
@@ -460,8 +457,6 @@ function LoadCalculator:getBasePerformanceFromPower(vehicle)
         -- UA: Криві AEM тут не застосовуються, бо currentCrop завжди nil під час ініціалізації.
         --     Натомість крива конкретної культури динамічно оновлюється у calculateEngineLoad.
 
-        Logging.info(string.format("[RHM] BasePerfMass: %s | cat=%s coef=%.3f | %d hp → %.1f kg/s = %.0f t/h",
-            vehicle:getFullName(), category or "?", coef, hp, basePerf, basePerf * 3.6))
         return basePerf
     end
     
@@ -553,9 +548,6 @@ function LoadCalculator:updateMoistureFactor(dt)
     self.moistureFactor  = factor
     self.moistureLabel   = label
     self.moisturePercent = percent
-
-    print(string.format("RHM: [MOISTURE] hour=%.2f | label=%s | factor=%.2f | percent=%.1f%%",
-        hour, label, factor, percent))
 end
 
 -- ============================================================================
@@ -807,19 +799,6 @@ function LoadCalculator:update(vehicle, dt, mass)
     self.totalDistance = self.totalDistance + vehicle.lastMovedDistance
     self.loadAccumulatedMass = (self.loadAccumulatedMass or 0) + mass
 
-    -- ── FORAGE-LC-UPDATE diagnostic ──────────────────────────────────────────
-    -- Confirms mass is flowing into the accumulator each tick.
-    -- If mass is always 0 here, the problem is upstream in rhm_Combine onUpdateTick.
-    if self.combineMemory and self.combineMemory.machineType == "forage" then
-        self._lcDbgCount = (self._lcDbgCount or 0) + 1
-        if self._lcDbgCount % 30 == 1 then
-            print(string.format(
-                "RHM: [FORAGE-LC-UPD #%d] mass=%.6f loadAccumulated=%.6f currentTime=%.0fms dist=%.3fm",
-                self._lcDbgCount, mass, self.loadAccumulatedMass, self.currentTime, self.totalDistance))
-        end
-    end
-    -- ────────────────────────────────────────────────────────────────────────
-    
     -- INSTANT REACTION FIX:
     -- EN: Only reset to 5 km/h if starting from idle (prevents reset loop during harvest)
     -- UA: Після простою скидаємо до 5 км/год (запобігає циклу скидання під час роботи)
@@ -874,8 +853,6 @@ function LoadCalculator:calculateEngineLoad(vehicle)
                                 or CropThroughputConfig.getForageCurveParams("maize"))
             if params then
                 self.basePerfMass = params.coef * (self.cachedHP ^ params.exp)
-                Logging.info(string.format("[RHM] Forage curve: %s → basePerfMass=%.2f kg/s (%.0f US ton/h) @ %d hp",
-                    ftName or "maize(fallback)", self.basePerfMass, self.basePerfMass * 3.6 * 1.10231, self.cachedHP))
             else
                 Logging.warning(string.format("[RHM] Forage curve: no params for '%s', basePerfMass unchanged=%.2f kg/s",
                     tostring(ftName), self.basePerfMass))
@@ -903,9 +880,6 @@ function LoadCalculator:calculateEngineLoad(vehicle)
                                 or CropThroughputConfig.getForageCurveParams("maize"))
             if params then
                 self.basePerfMass = params.coef * (self.cachedHP ^ params.exp)
-                Logging.info(string.format(
-                    "[RHM] Forage curve (pickup): %s → basePerfMass=%.2f kg/s (%.0f US ton/h) @ %d hp",
-                    currentCropName, self.basePerfMass, self.basePerfMass * 3.6 * 1.10231, self.cachedHP))
             else
                 Logging.warning(string.format(
                     "[RHM] Forage curve (pickup): no params for '%s', basePerfMass unchanged=%.2f kg/s",
@@ -1150,19 +1124,6 @@ function LoadCalculator:calculateEngineLoad(vehicle)
         self.engineLoad = 0
     end
 
-    -- ── FORAGE-LC-LOAD diagnostic ────────────────────────────────────────────
-    -- Fires every ~1.5 s (each averaging window). Shows every number in the load
-    -- formula so we can see exactly why engineLoad is 0 even when basePerfMass > 0.
-    if isForageMachine then
-        print(string.format(
-            "RHM: [FORAGE-LC-LOAD] loadAcc=%.4f safeTime=%.0fms cropFactor=%.3f moistFactor=%.3f"
-            .. " rawAvgMass=%.4f currentAvgMass=%.4f basePerfMass=%.2f maxAvgMass=%.2f engineLoad=%.4f",
-            self.loadAccumulatedMass or 0, safeTime, cropFactor,
-            (self.moistureFactor or 1.0),
-            rawAvgMass, self.currentAvgMass, self.basePerfMass,
-            maxAvgMass, self.engineLoad))
-    end
-    -- ────────────────────────────────────────────────────────────────────────
 end
 
 ---EN: Calculates Vehicle Speed Limit / UA: Розраховує обмеження швидкості

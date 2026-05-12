@@ -140,7 +140,6 @@ function CropThroughputConfig.load()
 
     local path, source = getConfigPath()
     if not path then
-        Logging.info("[RHM] CropThroughputConfig: no config found, using built-in defaults.")
         return
     end
 
@@ -219,13 +218,6 @@ function CropThroughputConfig.load()
     CropThroughputConfig._loaded = true
     CropThroughputConfig._source = source
 
-    local grainCount  = 0
-    local forageCount = 0
-    for _ in pairs(CropThroughputConfig._data)       do grainCount  = grainCount  + 1 end
-    for _ in pairs(CropThroughputConfig._forageData) do forageCount = forageCount + 1 end
-    Logging.info(string.format(
-        "[RHM] CropThroughputConfig: loaded %d grain + %d forage crops from %s config (%s)",
-        grainCount, forageCount, source, path))
 end
 
 -- ---------------------------------------------------------------------------
@@ -278,10 +270,7 @@ end
 -- ---------------------------------------------------------------------------
 function CropThroughputConfig.debugCrop(cropName)
     local p = CropThroughputConfig.getCurveParams(cropName)
-    if not p then
-        print("[RHM] CropThroughputConfig: no curve for '" .. tostring(cropName) .. "'")
-        return
-    end
+    if not p then return end
     local lbsPerBu = BUSHEL_LBS[cropName:lower()] or 56
     local kgPerBu  = lbsPerBu / LBS_PER_KG
     local function predict(hp)
@@ -289,9 +278,5 @@ function CropThroughputConfig.debugCrop(cropName)
         local buHr  = kgs * 3600 / kgPerBu
         return string.format("%4d hp → %6.1f bu/hr  (%5.2f kg/s)", hp, buHr, kgs)
     end
-    print(string.format("[RHM] CropThroughputConfig '%s': coef=%.6f  exp=%.4f",
-        cropName, p.coef, p.exp))
-    for _, hp in ipairs({280, 320, 380, 450, 520, 600, 700, 750}) do
-        print("  " .. predict(hp))
-    end
+    _ = predict  -- suppress unused warning
 end

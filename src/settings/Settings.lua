@@ -70,7 +70,6 @@ function Settings.new(manager)
     -- UA: Перевага системи одиниць відображення (клієнтська).
     self.unitSystem = Settings.UNIT_METRIC
 
-    Logging.info("RHM: Settings initialized (Split Difficulty)")
 
     return self
 end
@@ -114,7 +113,6 @@ end
 function Settings:setDifficultyLoss(difficulty)
     if difficulty >= Settings.DIFFICULTY_ARCADE and difficulty <= Settings.DIFFICULTY_REALISTIC then
         self.difficultyLoss = difficulty
-        Logging.info("RHM: Loss Difficulty changed to: %d", self.difficultyLoss)
     end
 end
 
@@ -123,7 +121,6 @@ end
 function Settings:setDifficultyMotor(difficulty)
     if difficulty >= Settings.DIFFICULTY_ARCADE and difficulty <= Settings.DIFFICULTY_REALISTIC then
         self.difficultyMotor = difficulty
-        Logging.info("RHM: Motor Difficulty changed to: %d", self.difficultyMotor)
     end
 end
 
@@ -222,5 +219,4 @@ function Settings:resetToDefaults()
 
     self:saveAndSync()
 
-    print("RHM: Settings reset to defaults")
 end

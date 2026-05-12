@@ -41,4 +41,3 @@ end
 -- UA: Застосовуємо перевизначення onLoad до всіх екземплярів Cutter у грі.
 Cutter.onLoad = Utils.overwrittenFunction(Cutter.onLoad, rhm_Cutter.onLoad)
 
-print("RHM: rhm_Cutter.lua loaded!")

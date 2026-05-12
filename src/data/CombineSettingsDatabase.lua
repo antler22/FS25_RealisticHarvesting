@@ -672,7 +672,7 @@ function CombineSettingsDatabase:getCropNameFromFillType(fillType)
         end
     end
     if not matchedName then
-        print(string.format("RHM: [CROP DB] Unknown FillType KEY: '%s' (ID: %d)", tostring(fillTypeKey), fillType))
+        Logging.warning(string.format("[RHM] CropDB: unknown fill type '%s' (ID: %d)", tostring(fillTypeKey), fillType))
     end
     
     return matchedName
@@ -757,4 +757,3 @@ function CombineSettingsDatabase:isValueValid(cropName, paramName, value)
     return value >= param.min and value <= param.max
 end
 
-print("[OK] CombineSettingsDatabase loaded with " .. #CombineSettingsDatabase:getAllCropNames() .. " crops")

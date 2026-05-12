@@ -159,27 +159,14 @@ Mission00.loadMission00Finished = Utils.appendedFunction(Mission00.loadMission00
 -- UA: Зберігання профілів ОБОВ'ЯЗКОВО prepended — FSBaseMission.delete очищає транспорт,
 --     тому appended збереження ітеруватиме порожній список і мовчки втратить налаштування сесії.
 FSBaseMission.delete = Utils.prependedFunction(FSBaseMission.delete, function()
-    print(string.format("RHM: [DELETE-DIAG] FSBaseMission.delete prepend fired | rhm=%s | profileManager=%s | vehicles=%s",
-        tostring(rhm ~= nil),
-        tostring(rhm and rhm.profileManager ~= nil or false),
-        tostring(g_currentMission and g_currentMission.vehicles ~= nil or false)))
     if rhm and rhm.profileManager and g_currentMission and g_currentMission.vehicles then
-        local vehicleCount = 0
-        for _ in pairs(g_currentMission.vehicles) do vehicleCount = vehicleCount + 1 end
-        print(string.format("RHM: [DELETE-DIAG] vehicle count = %d", vehicleCount))
         for _, vehicle in pairs(g_currentMission.vehicles) do
             local spec = vehicle.spec_rhm_Combine
-            local vName = vehicle.configFileName or tostring(vehicle)
             if spec and spec.combineMemory then
                 local mem = spec.combineMemory
-                print(string.format("RHM: [DELETE-DIAG]   vehicle=%s | currentCrop=%s | hasSettings=%s",
-                    tostring(vName), tostring(mem.currentCrop), tostring(mem.currentSettings ~= nil)))
                 if mem.currentCrop and mem.currentSettings then
                     rhm.profileManager:saveProfile(mem.currentCrop, mem.currentSettings)
                 end
-            else
-                print(string.format("RHM: [DELETE-DIAG]   vehicle=%s | spec_rhm_Combine=%s (skipped)",
-                    tostring(vName), tostring(spec ~= nil)))
             end
         end
     end

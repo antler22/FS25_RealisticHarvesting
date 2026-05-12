@@ -99,9 +99,6 @@ function CombineSettingsEvent:run(connection)
                 mem.currentSettings.targetEngineLoad = self.fullSettings.targetEngineLoad
                 mem.autoSwitchEnabled = false
                 mem.mode = "MANUAL"
-                if RHM_Debug and RHM_Debug.isEnabled("Network") then
-                    print("RHM: [Sync] Received full user profile settings via network")
-                end
             else
                 if self.parameter == "AUTO_SET" then
                     -- EN: Client requested AUTO mode — configure optimal settings for current crop.
@@ -110,9 +107,6 @@ function CombineSettingsEvent:run(connection)
                     mem.mode = "AUTO"
                     if mem.currentCrop then
                         mem:autoConfigureForCrop(mem.currentCrop, true)
-                        if RHM_Debug and RHM_Debug.isEnabled("Network") then
-                            print(string.format("RHM: [Sync] Server applied AUTO mode for %s", mem.currentCrop))
-                        end
                     end
                 elseif self.parameter == "RESET_SET" then
                     -- EN: Client requested RESET — revert all settings to neutral 50%.
@@ -121,9 +115,6 @@ function CombineSettingsEvent:run(connection)
                     mem.mode = "MANUAL"
                     if mem.currentCrop then
                         mem:autoConfigureForCrop(mem.currentCrop, false)
-                        if RHM_Debug and RHM_Debug.isEnabled("Network") then
-                            print(string.format("RHM: [Sync] Server applied RESET to 50%% for %s", mem.currentCrop))
-                        end
                     end
                 elseif self.parameter == "AUTO_MODE" then
                     -- EN: Toggle the auto-switch behavior flag (1 = enabled, 0 = disabled).
@@ -139,9 +130,6 @@ function CombineSettingsEvent:run(connection)
                         if self.parameter ~= "targetEngineLoad" then
                             mem.autoSwitchEnabled = false
                             mem.mode = "MANUAL"
-                        end
-                        if RHM_Debug and RHM_Debug.isEnabled("Network") then
-                            print(string.format("RHM: [Sync] Received parameter update: %s = %d", self.parameter, self.value))
                         end
                     end
                 end

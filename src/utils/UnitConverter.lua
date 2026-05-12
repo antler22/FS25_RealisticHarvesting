@@ -137,14 +137,6 @@ function UnitConverter.initCropDensities()
     addDensity("STRAW",             0.090)
     addDensity("WOODCHIPS",         0.250)
     addDensity("CHAFF",             0.220)
-    -- EN: Diagnostic: confirm how many entries resolved and what FillType ID SORGHUM got.
-    --     If SORGHUM FillType ID is nil the density fix is silently inactive for that crop.
-    -- UA: Діагностика: підтверджуємо кількість записів і FillType ID для SORGHUM.
-    local sorghumId = FillType and FillType["SORGHUM"]
-    print(string.format("RHM: [DENSITY-DIAG] initCropDensities complete | entries=%d | FillType.SORGHUM=%s | density[SORGHUM]=%.3f",
-        added,
-        tostring(sorghumId),
-        (sorghumId and UnitConverter.CROP_DENSITY_KG_L[sorghumId]) or 0))
 end
 
 -- EN: Returns the real-world bulk density (kg/L) for a given fill type index, or nil if unknown.

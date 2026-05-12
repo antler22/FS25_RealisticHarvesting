@@ -43,7 +43,7 @@ end
 function ProfileManager:getXmlFilePath()
     local userPath = getUserProfileAppPath()
     if not userPath then
-        print("RHM: ERROR - Cannot get user profile path for profiles")
+        Logging.error("[RHM] Cannot get user profile path for profiles")
         return nil
     end
 
@@ -67,14 +67,11 @@ end
 --     Повертає false, якщо файл ще не існує (перший запуск).
 function ProfileManager:loadProfiles()
     local xmlPath = self:getXmlFilePath()
-    print(string.format("RHM: [PROFILE-DIAG] loadProfiles called | path=%s | fileExists=%s", tostring(xmlPath), tostring(xmlPath ~= nil and fileExists(xmlPath) or false)))
     if not xmlPath or not fileExists(xmlPath) then
-        print("RHM: [PROFILE-DIAG] loadProfiles EARLY EXIT - file does not exist yet")
         return false
     end
 
     local xml = XMLFile.load("RHM_Profiles", xmlPath)
-    print(string.format("RHM: [PROFILE-DIAG] loadProfiles XMLFile.load result = %s", tostring(xml ~= nil)))
     if xml then
         self.profiles = {}
         local i = 0
@@ -110,12 +107,10 @@ function ProfileManager:loadProfiles()
                 -- EN: Ensure targetEngineLoad always has a sane default.
                 if not profile.targetEngineLoad then profile.targetEngineLoad = 95 end
                 self.profiles[cropName] = profile
-                print(string.format("RHM: [PROFILE-DIAG]   loaded profile[%d] cropName=%s targetEngineLoad=%s", i, tostring(cropName), tostring(profile.targetEngineLoad)))
             end
             i = i + 1
         end
         xml:delete()
-        print(string.format("RHM: Loaded %d user crop profiles from %s", i, xmlPath))
         return true
     end
     return false
@@ -127,15 +122,12 @@ end
 --     Викликається автоматично після будь-якої зміни профілю через saveProfile().
 function ProfileManager:saveProfiles()
     local xmlPath = self:getXmlFilePath()
-    print(string.format("RHM: [PROFILE-DIAG] saveProfiles called | path=%s", tostring(xmlPath)))
     if not xmlPath then return false end
 
     local xml = XMLFile.create("RHM_Profiles", xmlPath, "realisticHarvestingProfiles")
-    print(string.format("RHM: [PROFILE-DIAG] saveProfiles XMLFile.create result = %s | profileCount=%d", tostring(xml ~= nil), (function() local n=0; for _ in pairs(self.profiles) do n=n+1 end; return n end)()))
     if xml then
         local i = 0
         for cropName, settings in pairs(self.profiles) do
-            print(string.format("RHM: [PROFILE-DIAG]   writing profile[%d] cropName=%s", i, tostring(cropName)))
             local key = string.format("%s.profile(%d)", self.XMLTAG, i)
             xml:setString(key .. "#cropName", cropName)
             -- EN: Write all params that are present in this profile (dynamic — no hardcoded list).
@@ -149,7 +141,6 @@ function ProfileManager:saveProfiles()
         end
         xml:save()
         xml:delete()
-        print(string.format("RHM: Saved %d user crop profiles to %s", i, xmlPath))
         return true
     end
     return false

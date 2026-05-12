@@ -245,8 +245,6 @@ function SettingsUI:refreshUI()
     if self.unitSystemOption and self.unitSystemOption.setState then
         self.unitSystemOption:setState(self.settings.unitSystem)
     end
-
-    print("RHM: UI refreshed")
 end
 
 -- EN: Adds a "Reset Settings" button to the settings menu footer.
@@ -256,7 +254,7 @@ end
 --     UA: Додається тільки один раз; дублювання попереджається. Використовує дію MENU_EXTRA_1 (X).
 function SettingsUI:ensureResetButton(settingsFrame)
     if not settingsFrame or not settingsFrame.menuButtonInfo then
-        print("RHM: ensureResetButton - settingsFrame invalid")
+        Logging.warning("[RHM] ensureResetButton: settingsFrame invalid")
         return
     end
 
@@ -265,7 +263,6 @@ function SettingsUI:ensureResetButton(settingsFrame)
             inputAction = InputAction.MENU_EXTRA_1,
             text = g_i18n:getText("rhm_reset") or "Reset Settings",
             callback = function()
-                print("RHM: Reset button clicked!")
                 if g_realisticHarvestManager and g_realisticHarvestManager.settings then
                     g_realisticHarvestManager.settings:resetToDefaults()
                     if g_realisticHarvestManager.settingsUI then
@@ -286,12 +283,10 @@ function SettingsUI:ensureResetButton(settingsFrame)
     -- UA: Перевіряємо чи кнопка вже додана, щоб уникнути дублікатів.
     for _, btn in ipairs(settingsFrame.menuButtonInfo) do
         if btn == self._resetButton then
-            print("RHM: Reset button already in menuButtonInfo")
             return
         end
     end
 
     table.insert(settingsFrame.menuButtonInfo, self._resetButton)
     settingsFrame:setMenuButtonInfoDirty()
-    print("RHM: Reset button added to footer! (X key)")
 end

@@ -156,9 +156,7 @@ function DraggableHUD:getPosition()
             y = math.max(0, math.min(1 - (self.height or 0), y))
             return x, y
         else
-            if RHM_Debug and RHM_Debug.isEnabled("UI") then
-                print(string.format("RHM: Saved HUD position (%.2f, %.2f) is off-screen. Resetting to default.", x, y))
-            end
+            Logging.warning(string.format("[RHM] Saved HUD position (%.2f, %.2f) is off-screen — resetting to default", x, y))
         end
     end
 
@@ -237,22 +235,6 @@ function DraggableHUD:update(dt)
     self.data.moistureLabel    = spec.data.moistureLabel or ""
     self.data.grainMoisture    = spec.data.grainMoisture or 0
     self.data.moistureSource   = spec.data.moistureSource or "none"
-
-    -- EN: One-time-per-vehicle diagnostic of the moisture pipeline. Logs on the first
-    --     updateData tick after the HUD attaches to a new vehicle so we can see at a
-    --     glance whether data is flowing through correctly.
-    -- UA: Разова діагностика каналу вологості — по першому тіку на нову машину.
-    if self._moistureDiagVehicle ~= self.vehicle then
-        self._moistureDiagVehicle = self.vehicle
-        print(string.format(
-            "RHM: [HUD-DIAG] Moisture pipe | showMoisture=%s | source=%s | label=%q | grain=%.2f | MoistureAdapter.isActive=%s | MoistureCalculator=%s",
-            tostring(self.settings and self.settings.showMoisture),
-            tostring(self.data.moistureSource),
-            tostring(self.data.moistureLabel),
-            self.data.grainMoisture or 0,
-            tostring(MoistureAdapter and MoistureAdapter.isActive),
-            tostring(MoistureCalculator ~= nil)))
-    end
 
     if self.dragging then
         if g_inputBinding and g_inputBinding.getMousePosition then
@@ -358,6 +340,21 @@ function DraggableHUD:drawContent()
         fruitType = self.vehicle.spec_combine.lastValidInputFruitType
     end
 
+    -- EN: Freeze productivity values at 2.5 s. Done unconditionally here (top of drawContent) so
+    --     the yield row (Row 2) can reference the same frozen liters/ac values that the
+    --     productivity row (Row 3) uses, regardless of which row renders first.
+    -- UA: Заморожуємо значення продуктивності раз на 2.5 с. Виконується на початку drawContent
+    --     щоб рядок врожайності міг використовувати ті самі заморожені значення.
+    do
+        local now = g_time or 0
+        if not self._lastProdUpdate or (now - self._lastProdUpdate) >= 2500 then
+            self._lastProdUpdate    = now
+            self._prodDisplayTon    = self.data.tonPerHour    or 0
+            self._prodDisplayLiters = self.data.litersPerHour or 0
+            self._prodDisplayAcPerHr = self.data.acPerHour    or 0
+        end
+    end
+
     -- EN: Row 1 — Engine Load.
     -- UA: Рядок 1 — Навантаження двигуна.
     if self.settings.showLoad then
@@ -368,48 +365,74 @@ function DraggableHUD:drawContent()
     end
 
     -- EN: Row 2 — Yield.
-    --     Refreshed every 2 seconds with ±5% noise applied once per refresh, not per frame.
-    --     Prevents the number from flickering on every draw call (~60/s) while still giving
-    --     realistic sensor-variance feel at a human-readable update rate.
-    -- UA: Рядок 2 — Врожайність. Оновлюється кожні 2 секунди з одноразовим ±5% шумом.
+    --     When manual swath width is active: back-calculated from throughput ÷ area rate.
+    --       yield = t/h ÷ ha/h  (or bu/h ÷ ac/h, t/h ÷ ac/h for other unit systems).
+    --     This is the correct approach for pickup headers and forage harvesters where the
+    --     per-tick mass/area accumulation is unreliable (liters arrive on different ticks
+    --     than the distance-based area, causing wild yield spikes in the rolling buffer).
+    --     Rate division uses the same 2.5 s frozen values as the productivity row, so both
+    --     numbers are always consistent with each other.
+    --     When AUTO (no swath width): uses the buffer-based rolling average with 2 s freeze.
+    -- UA: Рядок 2 — Врожайність.
+    --     При активній ручній ширині: зворотній розрахунок з пропускної здатності ÷ площа.
     if self.settings.showYield then
-        -- EN: Update frozen display value every 2 seconds using g_time (ms). / UA: Оновлюємо кожні 2с.
-        local now = g_time or 0
-        if not self._lastYieldUpdate or (now - self._lastYieldUpdate) >= 2000 then
-            self._lastYieldUpdate = now
-            local rawYield = self.data.yield or 0
-            if rawYield > 0.1 then
-                self._yieldDisplayValue = rawYield * (0.95 + math.random() * 0.10)
-            else
-                self._yieldDisplayValue = rawYield
-            end
-        end
-        local yieldVal = self._yieldDisplayValue or (self.data.yield or 0)
+        local frozenLiters  = self._prodDisplayLiters  or 0
+        local frozenAcPerHr = self._prodDisplayAcPerHr or 0
+        local frozenTon     = self._prodDisplayTon     or 0
+
+        -- EN: Check if manual swath width is active on this vehicle.
+        -- UA: Перевіряємо чи активна ручна ширина захвату.
+        local rhmSpecY  = self.vehicle and self.vehicle.spec_rhm_Combine
+        local swathW    = rhmSpecY and rhmSpecY.combineMemory
+                          and (rhmSpecY.combineMemory.swathWidth or 0) or 0
+        local useRates  = swathW > 0 and frozenAcPerHr > 0.01
+
         local yieldStr
-        if UnitConverter then
-            local val, suffix = UnitConverter.convertYield(yieldVal, unitSystem, fruitType)
-            yieldStr = string.format("%.1f %s", val, suffix)
+        if useRates then
+            -- EN: Rate-based yield: throughput ÷ area rate. Stable, consistent with bu/h row.
+            -- UA: Врожайність через показники: пропускна здатність ÷ площа. Стабільно.
+            if UnitConverter and unitSystem == UnitConverter.SYSTEM_BUSHELS and frozenLiters > 0 then
+                local buPerHr = frozenLiters / 35.2391
+                yieldStr = string.format("%.1f bu/ac", buPerHr / frozenAcPerHr)
+            elseif UnitConverter and unitSystem == UnitConverter.SYSTEM_IMPERIAL and frozenTon > 0 then
+                yieldStr = string.format("%.1f t/ac", frozenTon / frozenAcPerHr)
+            elseif frozenTon > 0 then
+                -- EN: Metric: t/h ÷ ha/h (convert ac/h → ha/h first).
+                -- UA: Метрика: т/год ÷ га/год.
+                local haPerHr = frozenAcPerHr / UnitConverter.HECTARE_TO_ACRE
+                yieldStr = string.format("%.1f t/ha", frozenTon / haPerHr)
+            else
+                yieldStr = "0.0"
+            end
         else
-            yieldStr = string.format("%.1f t/ha", yieldVal)
+            -- EN: AUTO mode: buffer-based rolling average with 2 s display freeze + ±5% noise.
+            -- UA: Режим AUTO: ковзне середнє по буферу з 2 с заморозкою та ±5% шумом.
+            local now = g_time or 0
+            if not self._lastYieldUpdate or (now - self._lastYieldUpdate) >= 2000 then
+                self._lastYieldUpdate = now
+                local rawYield = self.data.yield or 0
+                if rawYield > 0.1 then
+                    self._yieldDisplayValue = rawYield * (0.95 + math.random() * 0.10)
+                else
+                    self._yieldDisplayValue = rawYield
+                end
+            end
+            local yieldVal = self._yieldDisplayValue or (self.data.yield or 0)
+            if UnitConverter then
+                local val, suffix = UnitConverter.convertYield(yieldVal, unitSystem, fruitType)
+                yieldStr = string.format("%.1f %s", val, suffix)
+            else
+                yieldStr = string.format("%.1f t/ha", yieldVal)
+            end
         end
         self:drawRow(iconX, textX, textY, iconWidth, iconHeight, textSize, "yield", yieldStr, 0)
         textY = textY - lineHeight
     end
 
     -- EN: Row 3 — Productivity (bu/hr) and Row 4 — Area rate (ac/hr or ha/hr).
-    --     Refreshed every 2.5 seconds — same window as the underlying rolling average —
-    --     so the number only changes when there is genuinely new data, not every frame.
-    -- UA: Рядок 3 — Продуктивність (бу/год) і Рядок 4 — Площа (ак/год або га/год).
-    --     Оновлюється кожні 2.5 секунди — те саме вікно що й ковзне середнє.
+    --     Uses the 2.5 s frozen values set at the top of drawContent. No second freeze needed.
+    -- UA: Рядок 3 — Продуктивність і Рядок 4 — Площа. Використовує заморожені значення зверху.
     if self.settings.showProductivity then
-        local now = g_time or 0
-        if not self._lastProdUpdate or (now - self._lastProdUpdate) >= 2500 then
-            self._lastProdUpdate = now
-            self._prodDisplayTon     = self.data.tonPerHour or 0
-            self._prodDisplayLiters  = self.data.litersPerHour or 0
-            self._prodDisplayAcPerHr = self.data.acPerHour or 0
-        end
-
         local prodVal    = self._prodDisplayTon    or (self.data.tonPerHour    or 0)
         local litersVal  = self._prodDisplayLiters or (self.data.litersPerHour or 0)
         local acPerHrVal = self._prodDisplayAcPerHr or (self.data.acPerHour    or 0)

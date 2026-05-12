@@ -22,26 +22,7 @@ local RHM_MOD_NAME = g_currentModName or "FS25_RealisticHarvesting"
 -- UA: Перевіряє чи транспортний засіб має базову спеціалізацію Combine.
 --     Повертає true для всіх машин, включаючи модульні системи на кшталт NEXAT.
 function rhm_Combine.prerequisitesPresent(specializations)
-    -- EN: Print all specialization class names for diagnostic logging.
-    -- UA: Виводимо всі назви класів спеціалізацій для діагностичного логування.
-    print("========================================")
-    print("RHM: Checking prerequisites for vehicle")
-    print("Available specializations:")
-    for specName, specTable in pairs(specializations) do
-        if type(specTable) == "table" and specTable.className then
-            print("  - " .. specTable.className)
-        end
-    end
-    
-    -- Перевіряємо базову specialization Combine
     local hasCombine = SpecializationUtil.hasSpecialization(Combine, specializations)
-    print("Has Combine: " .. tostring(hasCombine))
-    
-    -- Для Nexat: тимчасово спрощуємо перевірку
-    -- Повертаємо true якщо просто є Combine
-    print("Result: " .. tostring(hasCombine))
-    print("========================================")
-    
     return hasCombine
 end
 
@@ -50,7 +31,6 @@ end
 -- UA: Реєструє перевизначені (proxy) функції rhm_Combine до подій-прислухачів.
 --     Ці функції перехоплюють основні поведінки комбайна для вбудованої логіки навантаження і швидкості.
 function rhm_Combine.registerOverwrittenFunctions(vehicleType)
-    print("RHM: Registering overwritten functions for rhm_Combine")
     SpecializationUtil.registerOverwrittenFunction(vehicleType, "addCutterArea", rhm_Combine.addCutterArea)
     SpecializationUtil.registerOverwrittenFunction(vehicleType, "addFillUnitFillLevel", rhm_Combine.addFillUnitFillLevel)
     SpecializationUtil.registerOverwrittenFunction(vehicleType, "getSpeedLimit", rhm_Combine.getSpeedLimit)
@@ -76,14 +56,12 @@ end
 --     ПІСЛЯ створення Vehicle.xmlSchemaSavegame. Це правильне місце для реєстрації шляхів XML
 --     збереження — так роблять всі базові спеціалізації (див. Combine.initSpecialization).
 function rhm_Combine.initSpecialization()
-    print("RHM: [INIT] rhm_Combine.initSpecialization() fired")
     if Vehicle and Vehicle.xmlSchemaSavegame then
         local basePath = string.format("vehicles.vehicle(?).%s.rhm_Combine", RHM_MOD_NAME)
         rhm_Combine.registerXMLPaths(Vehicle.xmlSchemaSavegame, basePath)
         rhm_Combine._schemaRegistered = true
-        print(string.format("RHM: [INIT] Savegame XML schema registered at canonical hook | basePath=%s", basePath))
     else
-        print(string.format("RHM: [INIT] WARNING — Vehicle.xmlSchemaSavegame still nil in initSpecialization | Vehicle=%s",
+        Logging.warning(string.format("[RHM] Vehicle.xmlSchemaSavegame still nil in initSpecialization | Vehicle=%s",
             tostring(Vehicle ~= nil)))
     end
 end
@@ -122,7 +100,6 @@ end
 --     Також реєструє шляхи XML схеми збереження через Vehicle.xmlSchemaSavegame як критичне виправлення
 --     для спеціалізацій доданих програмно, які інакше пропускаються.
 function rhm_Combine.registerEventListeners(vehicleType)
-    print("RHM: Registering event listeners for rhm_Combine")
     SpecializationUtil.registerEventListener(vehicleType, "onLoad", rhm_Combine)
     SpecializationUtil.registerEventListener(vehicleType, "onUpdateTick", rhm_Combine)
     SpecializationUtil.registerEventListener(vehicleType, "onDraw", rhm_Combine)
@@ -158,9 +135,8 @@ function rhm_Combine.registerEventListeners(vehicleType)
         -- UA: Використовуємо RHM_MOD_NAME — g_currentModName ненадійний під час validateTypes.
         local basePath = string.format("vehicles.vehicle(?).%s.rhm_Combine", RHM_MOD_NAME)
         rhm_Combine.registerXMLPaths(Vehicle.xmlSchemaSavegame, basePath)
-        print(string.format("RHM: [SCHEMA-DIAG] Registered savegame XML schema paths | basePath=%s", basePath))
     else
-        print(string.format("RHM: [SCHEMA-DIAG] WARNING - Vehicle.xmlSchemaSavegame is %s | Vehicle=%s",
+        Logging.warning(string.format("[RHM] Vehicle.xmlSchemaSavegame is %s in registerEventListeners | Vehicle=%s",
             tostring(Vehicle and Vehicle.xmlSchemaSavegame),
             tostring(Vehicle ~= nil)))
     end
@@ -237,7 +213,6 @@ if not rhm_Combine._nexatHookApplied then
         Vehicle.onRegisterActionEvents,
         RHM_globalOnRegisterActionEvents
     )
-    print("RHM: [NEXAT] Global Vehicle.onRegisterActionEvents hook applied.")
 end
 -- ============================================================================
 
@@ -260,7 +235,6 @@ function rhm_Combine:onLoad(savegame)
             local basePath = string.format("vehicles.vehicle(?).%s.rhm_Combine", RHM_MOD_NAME)
             rhm_Combine.registerXMLPaths(Vehicle.xmlSchemaSavegame, basePath)
             rhm_Combine._schemaRegistered = true
-            print(string.format("RHM: [SCHEMA] Savegame XML schema registered (deferred to onLoad) | basePath=%s", basePath))
         else
             Logging.warning("[RHM] Vehicle.xmlSchemaSavegame is still nil in onLoad — savegame persistence unavailable")
         end
@@ -376,12 +350,6 @@ function rhm_Combine:onLoad(savegame)
     end
 
     spec.machineType = machineType
-    print(string.format("RHM: [OK] Machine type detected: %s (pipe=%s, cutter=%s, rainOK=%s, fruitPrep=%s)",
-        machineType,
-        tostring(self.spec_pipe ~= nil),
-        tostring(self.spec_cutter ~= nil),
-        tostring(sc and sc.allowThreshingDuringRain),
-        tostring(self.spec_fruitPreparer ~= nil)))
 
 
     -- EN: Create the combine memory system for current settings. Link it to LoadCalculator
@@ -400,11 +368,8 @@ function rhm_Combine:onLoad(savegame)
         local storeLevel = RHMShopIntegration.getUpgradeLevelFromConfig(self)
         if storeLevel and storeLevel > 0 then
             spec.combineMemory.upgradeLevel = storeLevel
-            print(string.format("RHM: [Shop] New vehicle — upgrade level set to %d from store config", storeLevel))
         end
     end
-
-    print("RHM: [OK] Combine Settings System initialized")
 
     
     -- EN: HUD live data table — all fields are updated every tick on the server and synced to clients.
@@ -474,27 +439,6 @@ end
 function rhm_Combine:addFillUnitFillLevel(superFunc, ...)
     local r1, r2, r3, r4, r5, r6 = superFunc(self, ...)
     local actualAdded = r1 -- Base game returns actual delta as first arg
-
-    -- ── FORAGE-FILL diagnostic ───────────────────────────────────────────────
-    -- Fires on EVERY call so we can see whether the forage harvester's fill unit
-    -- is receiving liters and whether the isCutting guard lets them through.
-    local fdbg = self.spec_rhm_Combine
-    if fdbg and fdbg.combineMemory and fdbg.combineMemory.machineType == "forage" then
-        local _, fillUnitIndex, fillLevelDelta, fillTypeIndex = ...
-        local ftName = "nil"
-        if fillTypeIndex and g_fillTypeManager then
-            local ftd = g_fillTypeManager:getFillTypeByIndex(fillTypeIndex)
-            if ftd then ftName = ftd.name or "?" end
-        end
-        local isCutting = (fdbg.totalCumulativeArea or 0) > (fdbg.prevCumulativeArea or 0)
-        print(string.format(
-            "RHM: [FORAGE-FILL] unit=%s fillType=%s delta=%.3f actualAdded=%s isCutting=%s totalArea=%.6f prevArea=%.6f lastLiters=%.3f",
-            tostring(fillUnitIndex), ftName, fillLevelDelta or 0, tostring(actualAdded),
-            tostring(isCutting),
-            fdbg.totalCumulativeArea or 0, fdbg.prevCumulativeArea or 0,
-            fdbg.lastLiters or 0))
-    end
-    -- ────────────────────────────────────────────────────────────────────────
 
     local spec = self.spec_rhm_Combine
     if spec and actualAdded and type(actualAdded) == "number" and actualAdded > 0 then
@@ -614,6 +558,16 @@ end
 -- UA: Перевизначення addCutterArea — перехоплює сиру (піксельну) площу зрізу за тік.
 --     Перетворює пікселі в квадратні метри з допомогою g_currentMission:getFruitPixelsToSqm().
 --     Також зберігає запасні літри з поверненого значення для форажних комбайнів без бункера.
+local function isCutSwathFillType(fillTypeIndex)
+    if not fillTypeIndex or fillTypeIndex == FillType.UNKNOWN or not g_fillTypeManager then
+        return false
+    end
+
+    local desc = g_fillTypeManager:getFillTypeByIndex(fillTypeIndex)
+    local name = desc and desc.name and string.upper(desc.name) or nil
+    return name ~= nil and name:find("_CUT") ~= nil
+end
+
 function rhm_Combine:addCutterArea(superFunc, ...)
     local area, realArea, inputFruitType, outputFillType, strawRatio, strawGroundType, farmId, cutterLoad = ...
     
@@ -627,37 +581,6 @@ function rhm_Combine:addCutterArea(superFunc, ...)
         return r1, r2, r3, r4, r5, r6, r7, r8, r9, r10
     end
 
-    -- ── FORAGE-CUT diagnostic ────────────────────────────────────────────────
-    -- Fires on every addCutterArea call for forage machines.
-    -- "area"     = pixel count passed by the cutter (2nd variadic arg in FS25 = area pixels)
-    -- "liters_in"= liters the cutter computed before passing to Combine (3rd variadic arg)
-    -- "retLiters"= what base-game Combine:addCutterArea returned (this feeds _fallbackLiters)
-    -- If retLiters is always 0 while area > 0, the base game is short-circuiting the return.
-    if spec.combineMemory and spec.combineMemory.machineType == "forage" then
-        local _area, _litersIn, _inFT, _outFT = ...
-        local outName, inName = "nil", "nil"
-        if _outFT and g_fillTypeManager then
-            local ftd = g_fillTypeManager:getFillTypeByIndex(_outFT)
-            if ftd then outName = ftd.name or "?" end
-        end
-        if _inFT and g_fruitTypeManager then
-            local ftd = g_fruitTypeManager:getFruitTypeByIndex(_inFT)
-            if ftd then inName = ftd.name or "?" end
-        end
-        -- throttle: print every 30 calls so the log stays readable but dense
-        spec._cutDbgCount = (spec._cutDbgCount or 0) + 1
-        if spec._cutDbgCount % 30 == 1 then
-            print(string.format(
-                "RHM: [FORAGE-CUT #%d] area=%.4f liters_in=%.4f out=%s(%s) in=%s(%s) retLiters=%.4f fallbackAcc=%.4f",
-                spec._cutDbgCount,
-                _area or 0, _litersIn or 0,
-                tostring(_outFT), outName, tostring(_inFT), inName,
-                retLiters or 0,
-                (spec._fallbackLiters or 0)))
-        end
-    end
-    -- ────────────────────────────────────────────────────────────────────────
-    
     -- EN: lastMultiplier kept for compatibility with older logic paths.
     -- UA: lastMultiplier збережено для сумісності зі старими логічними шляхами.
     local multiplier = 1.0
@@ -798,37 +721,6 @@ function rhm_Combine:addCutterArea(superFunc, ...)
         spec._pendingCrop = nil
     end
     
-    -- EN: One-shot cut-area diagnostic — fires once per unique (outputFillType, inputFruitType) pair.
-    --     Always active (no debug flag needed). Search log for "[CUT-DIAG]" when a new windrow
-    --     crop produces no yield/load: it shows exactly what fill type and fruit type the game
-    --     passed, letting you add the missing entry to CombineSettingsDatabase.fillTypeMapping.
-    -- UA: Одноразова діагностика зрізу — спрацьовує один раз на унікальну пару типів.
-    if areaForYield > 0 then
-        if not spec._cutDiagPrinted then spec._cutDiagPrinted = {} end
-        local diagKey = tostring(outputFillType) .. "_" .. tostring(inputFruitType)
-        if not spec._cutDiagPrinted[diagKey] then
-            spec._cutDiagPrinted[diagKey] = true
-            local outName, inName = "nil", "nil"
-            if g_fillTypeManager and outputFillType then
-                local ftd = g_fillTypeManager:getFillTypeByIndex(outputFillType)
-                if ftd then outName = ftd.name or "?" end
-            end
-            if g_fruitTypeManager and inputFruitType then
-                local ftd = g_fruitTypeManager:getFruitTypeByIndex(inputFruitType)
-                if ftd then inName = ftd.name or "?" end
-            end
-            local detectedCrop = spec.loadCalculator and spec.loadCalculator.currentCrop or "nil"
-            print(string.format(
-                "RHM: [CUT-DIAG] outputFillType=%s(%s) inputFruitType=%s(%s) retLiters=%.2f area=%.4f detectedCrop=%s machineType=%s",
-                tostring(outputFillType), outName,
-                tostring(inputFruitType), inName,
-                retLiters or 0,
-                areaForYield,
-                detectedCrop,
-                tostring(spec.combineMemory and spec.combineMemory.machineType or "nil")))
-        end
-    end
-
     return r1, r2, r3, r4, r5, r6, r7, r8, r9, r10
 end
 
@@ -1341,22 +1233,6 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
     local massKg = 0
     local liters = spec.lastLiters or 0
 
-    -- ── FORAGE-TICK diagnostic (pre-mass) ────────────────────────────────────
-    if spec.combineMemory and spec.combineMemory.machineType == "forage" then
-        spec._tickDbgCount = (spec._tickDbgCount or 0) + 1
-        if spec._tickDbgCount % 30 == 1 then
-            print(string.format(
-                "RHM: [FORAGE-TICK #%d] lastLiters=%.4f _fallbackLiters=%.4f lastFillType=%s totalCumArea=%.6f prevCumArea=%.6f",
-                spec._tickDbgCount,
-                spec.lastLiters or 0,
-                spec._fallbackLiters or 0,
-                tostring(spec.lastFillType),
-                spec.totalCumulativeArea or 0,
-                spec.prevCumulativeArea or 0))
-        end
-    end
-    -- ────────────────────────────────────────────────────────────────────────
-
     -- EN: Fall back to liters captured by addCutterArea for forage harvesters (no hopper).
     -- UA: Використовуємо запасні літри з addCutterArea для форажних комбайнів (без бункера).
     if liters <= 0 and (spec._fallbackLiters or 0) > 0 then
@@ -1396,13 +1272,6 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
             end
             if not spec._densityDiagLogged[spec.lastFillType] then
                 spec._densityDiagLogged[spec.lastFillType] = true
-                local ftName = "?"
-                if g_fillTypeManager then
-                    local ft = g_fillTypeManager:getFillTypeByIndex(spec.lastFillType)
-                    if ft then ftName = ft.name or "?" end
-                end
-                print(string.format("RHM: [DENSITY-DIAG] First use: fillType=%d (%s) density=%.4f kg/L (table hit)",
-                    spec.lastFillType, ftName, density))
             end
         elseif spec.lastFillType and g_fillTypeManager then
             -- EN: Fallback: FS25 fill type density (rarely reached once table is populated).
@@ -1419,8 +1288,6 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
                 if not spec._densityDiagLogged then spec._densityDiagLogged = {} end
                 if not spec._densityDiagLogged[spec.lastFillType] then
                     spec._densityDiagLogged[spec.lastFillType] = true
-                    print(string.format("RHM: [DENSITY-DIAG] FALLBACK: fillType=%d density=%.4f kg/L (FS25 massPerLiter=%.6f) - not in RHM density table",
-                        spec.lastFillType, fillType.massPerLiter * 1000, fillType.massPerLiter))
                 end
             else
                 massKg = liters * 0.75
@@ -1430,19 +1297,6 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
         end
     end
     
-    -- ── FORAGE-MASS diagnostic (post-density) ───────────────────────────────
-    if spec.combineMemory and spec.combineMemory.machineType == "forage" then
-        if (spec._tickDbgCount or 0) % 30 == 1 then
-            local srcLabel = (spec.lastLiters or 0) > 0 and "hopper" or ((spec._fallbackLiters or 0) > 0 and "fallback" or "NONE")
-            print(string.format(
-                "RHM: [FORAGE-MASS #%d] liters=%.4f massKg=%.6f lastFillType=%s src=%s",
-                spec._tickDbgCount or 0,
-                liters, massKg,
-                tostring(spec.lastFillType), srcLabel))
-        end
-    end
-    -- ────────────────────────────────────────────────────────────────────────
-
     -- EN: Per-tick area — delta of the monotonic cumulative counter since last tick.
     --     Used for the isCutting guard and engine load calculations, NOT for yield display.
     -- UA: Площа за тік — різниця монотонного лічильника з минулого тіку.
@@ -1493,35 +1347,28 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
             end
         end
 
-        -- EN: PRIMARY (pickup header): distance × manual swath width.
-        --     For pickup headers the game pixel-area reflects only the narrow pickup aperture
-        --     (~12 ft), while the harvested mass came from a swath that may be 4× wider.
-        --     Using pixel area here would inflate yield by that ratio.  When the user has set
-        --     a manual swath width we always prefer the geometric calculation.
-        -- UA: PRIMARY (підбирач): відстань × ручна ширина валка.
-        --     Для підбирачів піксельна площа відповідає вузькій апертурі підбирача (~12 фт),
-        --     тоді як зібрана маса надійшла з ширшого валка (може бути в 4 рази ширше).
-        --     Використання піксельної площі тут роздуває врожайність на цей коефіцієнт.
+        -- EN: PRIMARY: distance × manual swath width when the user has set one.
+        --     swathWidth > 0 means the user chose a specific work width (not AUTO).
+        --     This applies to ALL header types — pickup, forage, and direct-cut —
+        --     because if the operator set a width they want that number used everywhere.
+        --     For pickup headers, pixel-area reflects only the narrow pickup aperture
+        --     (~12 ft) while the harvested mass came from a wider swath, so manual
+        --     override is especially important there. For foragers and direct-cut headers
+        --     the manual width still takes precedence over pixel-area auto-detection.
+        -- UA: PRIMARY: відстань × ручна ширина коли користувач її вказав.
+        --     swathWidth > 0 = оператор вибрав ширину (не AUTO). Застосовується до всіх типів жаток.
         local swathW = spec.combineMemory and spec.combineMemory.swathWidth
         local _isPickup = isPickupHeader(self)
-        if _isPickup and swathW and swathW > 0 then
+        local _isCutSwath = isCutSwathFillType(spec.lastFillType)
+        if swathW and swathW > 0 then
             local dist = self.lastMovedDistance or 0
             areaForYield = dist * swathW
-            -- EN: Diagnostic — throttled to every 120 ticks so the log stays readable.
-            spec._pickupDbgCount = (spec._pickupDbgCount or 0) + 1
-            if spec._pickupDbgCount % 120 == 1 then
-                print(string.format(
-                    "RHM: [PICKUP-AREA #%d] isPickup=true swathW=%.3fm dist=%.4fm areaForYield=%.4fm²",
-                    spec._pickupDbgCount, swathW, dist, areaForYield))
-            end
-        elseif _isPickup and (not swathW or swathW <= 0) then
+        elseif (_isPickup or _isCutSwath) and (not swathW or swathW <= 0) then
             -- EN: Pickup header detected but no manual swath width set — warn once, use cached width as best-effort.
             -- UA: Підбирач виявлено, але ширина валка не вказана — попереджаємо, використовуємо кешовану ширину.
             if not spec._pickupNoSwathWarned then
                 spec._pickupNoSwathWarned = true
-                print("RHM: [PICKUP-AREA] WARNING — pickup header detected but no manual swath width set. " ..
-                      "Please set your swath width in the Calibration GUI for accurate yield. " ..
-                      "Falling back to pixel/cached area (yield will be inflated).")
+                Logging.warning("[RHM] Pickup/cut-swath header detected but no manual swath width set — yield accuracy reduced")
             end
             if pixelAreaDelta > 0 then
                 areaForYield = pixelAreaDelta
@@ -1608,12 +1455,8 @@ function rhm_Combine:onUpdateTick(dt, isActiveForInput, isActiveForInputIgnoreSe
                         nil
                     )
                     
-                    if rhm_Combine.debug or cropLoss > 10 then
-                        print(string.format("RHM: [LOSS] Crop Loss Applied: %.1f L lost (%.1f%% of %.1f L harvest)",
-                            lostLiters, cropLoss, liters))
-                    end
                 else
-                    print("RHM: Warning - Could not find fill unit for crop loss removal")
+                    Logging.warning("[RHM] Could not find fill unit for crop loss removal")
                 end
             end
         end
@@ -1863,38 +1706,18 @@ end
 --     Використовує pcall для кожного setValue щоб помилки валідації схеми не падали при збереженні.
 function rhm_Combine:saveToXMLFile(xmlFile, key, usedModNames)
     local spec = self.spec_rhm_Combine
-    -- EN: DIAG — print even if we bail early so we can confirm the function fires.
-    print(string.format("RHM: [SAVE-DIAG] saveToXMLFile called for %s | key=%s | hasSpec=%s | hasMem=%s",
-        self:getName() or "?",
-        tostring(key),
-        tostring(spec ~= nil),
-        tostring(spec and spec.combineMemory ~= nil)))
     if not spec or not spec.combineMemory then return end
 
     local cur = key .. ".combineMemory.current"
     local mem = spec.combineMemory
     local settings = mem.currentSettings
 
-    -- EN: DIAG — dump state snapshot so we can see exactly what's being written.
-    print(string.format("RHM: [SAVE-DIAG]   cur path = %s", cur))
-    print(string.format("RHM: [SAVE-DIAG]   currentCrop=%s | mode=%s | fan=%s | rotor=%s | upper=%s | lower=%s | target=%s",
-        tostring(mem.currentCrop),
-        tostring(mem.mode),
-        tostring(settings.fan),
-        tostring(settings.rotor),
-        tostring(settings.upperSieve),
-        tostring(settings.lowerSieve),
-        tostring(settings.targetEngineLoad)))
-
     -- EN: Use pcall for each setValue to prevent schema validation crashes.
-    --     DIAG: now prints both success and failure so we know if schema rejects anything.
-    -- UA: pcall для кожного setValue щоб помилки схеми не падали. DIAG: виводимо успіх і помилку.
+    -- UA: pcall для кожного setValue щоб помилки схеми не падали.
     local function safeSet(path, value)
         local ok, err = pcall(function() xmlFile:setValue(path, value) end)
         if not ok then
-            print("RHM: [SAVE] FAILED set " .. tostring(path) .. " = " .. tostring(value) .. " | err: " .. tostring(err))
-        else
-            print("RHM: [SAVE-DIAG]   OK  " .. tostring(path) .. " = " .. tostring(value))
+            Logging.warning("[RHM] saveToXMLFile: failed to set " .. tostring(path) .. " | " .. tostring(err))
         end
     end
 
@@ -1914,9 +1737,6 @@ function rhm_Combine:saveToXMLFile(xmlFile, key, usedModNames)
     else
         safeSet(cur .. "#feeder",  settings.feeder or 50)
     end
-
-    print(string.format("RHM: [SAVE] saveToXMLFile complete for %s (crop=%s)",
-        self:getName() or "?", tostring(mem.currentCrop)))
 end
 
 -- EN: Called by FS25 after a vehicle has finished loading from a savegame.
@@ -1929,24 +1749,10 @@ end
 --     `savegame` є nil для нових (не завантажених) транспортних засобів — потрібна перевірка.
 function rhm_Combine:onPostLoad(savegame)
     local spec = self.spec_rhm_Combine
-    -- EN: DIAG — print even if we bail early so we can confirm the function fires.
-    print(string.format("RHM: [LOAD-DIAG] onPostLoad called for %s | savegame=%s | hasSpec=%s | hasMem=%s",
-        self:getName() or "?",
-        tostring(savegame ~= nil),
-        tostring(spec ~= nil),
-        tostring(spec and spec.combineMemory ~= nil)))
     if not spec or not spec.combineMemory then return end
-    if not savegame then
-        print("RHM: [LOAD-DIAG]   savegame is nil — new vehicle, skipping XML load")
-        return
-    end
+    if not savegame then return end
 
-    -- EN: DIAG — show exactly what key FS25 gave us and the full path we'll read from.
     local cur = savegame.key .. "." .. RHM_MOD_NAME .. ".rhm_Combine.combineMemory.current"
-    print(string.format("RHM: [LOAD-DIAG]   savegame.key = %s", tostring(savegame.key)))
-    print(string.format("RHM: [LOAD-DIAG]   RHM_MOD_NAME = %s", tostring(RHM_MOD_NAME)))
-    print(string.format("RHM: [LOAD-DIAG]   full cur path = %s", cur))
-
     local xmlFile = savegame.xmlFile
 
     -- EN: Check if the node exists before reading. hasProperty() does NOT validate schema,
@@ -1957,13 +1763,11 @@ function rhm_Combine:onPostLoad(savegame)
     -- UA: Перевіряємо наявність вузла перед читанням. hasProperty() не валідує схему,
     --     тому безпечно повертає false коли наші дані ще не були збережені.
     local nodeExists = xmlFile:hasProperty(cur .. "#mode")
-    print(string.format("RHM: [LOAD-DIAG]   node exists (has #mode)? %s", tostring(nodeExists)))
 
     if not nodeExists then
         -- EN: No saved data for this combine — keep CombineMemory defaults (all 50s, AUTO mode).
         --     This is expected on the first load after installing RHM, or when saving failed.
         -- UA: Немає збережених даних — залишаємо дефолти CombineMemory (все 50, режим AUTO).
-        print(string.format("RHM: [LOAD-DIAG]   No RHM data in savegame — keeping defaults for %s", self:getName() or "?"))
         -- EN: Still blend with store-purchased upgrade tier if present.
         -- UA: Все одно враховуємо рівень апгрейду зі стору якщо є.
         if RHMShopIntegration then
@@ -2010,19 +1814,6 @@ function rhm_Combine:onPostLoad(savegame)
         spec.combineMemory.currentSettings.feeder = xmlFile:getValue(cur .. "#feeder", 50) or 50
     end
 
-    -- EN: DIAG — dump everything we read back so we can compare to what was saved.
-    local s = spec.combineMemory.currentSettings
-    print(string.format("RHM: [LOAD-DIAG]   READ BACK: rawCrop='%s' → currentCrop=%s | mode=%s | fan=%s rotor=%s upper=%s lower=%s target=%s",
-        tostring(savedCrop),
-        tostring(spec.combineMemory.currentCrop),
-        tostring(spec.combineMemory.mode),
-        tostring(s.fan), tostring(s.rotor),
-        tostring(s.upperSieve), tostring(s.lowerSieve),
-        tostring(s.targetEngineLoad)))
-    print(string.format("RHM: [LOAD] onPostLoad complete for %s (crop=%s mode=%s)",
-        self:getName() or "?",
-        tostring(spec.combineMemory.currentCrop),
-        tostring(spec.combineMemory.mode)))
 end
 
 -- ============================================================================
