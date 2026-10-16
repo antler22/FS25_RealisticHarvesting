@@ -576,5 +576,8 @@
         <text name="rhm_upgrade_tier2_name" text="Einstellungsüberwachung" />
         <text name="rhm_upgrade_tier3_name" text="Geschwindigkeitsautomatik" />
         <text name="rhm_upgrade_tier4_name" text="Vollautomatik" />
+        <!-- Rotor plugging (fork) -->
+        <text name="rhm_warn_rotor_plugged" text="ROTOR VERSTOPFT! Rückwärts fahren und Maschine freimachen." />
+        <text name="rhm_warn_plug_risk" text="VERSTOPFGEFAHR" />
     </texts>
 </l10n>

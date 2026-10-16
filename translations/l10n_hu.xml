@@ -576,5 +576,8 @@
         <text name="rhm_upgrade_tier2_name" text="Beállítás-felügyelet" />
         <text name="rhm_upgrade_tier3_name" text="Sebességautomatika" />
         <text name="rhm_upgrade_tier4_name" text="Teljes automatizáció" />
+        <!-- Rotor plugging (fork) -->
+        <text name="rhm_warn_rotor_plugged" text="A ROTOR ELTÖMŐDÖTT! Tolasson hátra és tisztítsa meg a gépet." />
+        <text name="rhm_warn_plug_risk" text="DUGULÁSI KOCKÁZAT" />
     </texts>
 </l10n>

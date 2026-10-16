@@ -48,6 +48,15 @@ source(modDirectory .. "src/fork/ElectronicsTiers.lua")
 -- UA: Ручна робоча ширина для форажних жаток / підбирачів зі збереженням та синхронізацією.
 source(modDirectory .. "src/fork/WorkWidth.lua")
 
+-- EN: Ground-speed header loss, folded into upstream's crop-loss total and its "speed" bucket.
+-- UA: Втрати від швидкості на жатці, додані до загальних втрат оригіналу та категорії "швидкість".
+source(modDirectory .. "src/fork/HeaderLoss.lua")
+
+-- EN: Rotor plugging on sustained overload, with multiplayer sync. Loaded after the tiers and work width so its
+--     speed stop is the outermost getSpeedLimit hook.
+-- UA: Забивання ротора при тривалому перевантаженні, з синхронізацією в мультиплеєрі.
+source(modDirectory .. "src/fork/RotorPlug.lua")
+
 -- EN: Hook rhm_Combine now (covers a build where nothing is re-sourced); SpecHooks hooks it again after the
 --     engine registers the specialization and replaces the table.
 -- UA: Хукаємо rhm_Combine зараз; SpecHooks зробить це знову після реєстрації специфікації.

@@ -574,5 +574,8 @@
         <text name="rhm_upgrade_tier2_name" text="Settings Monitoring" />
         <text name="rhm_upgrade_tier3_name" text="Speed Automation" />
         <text name="rhm_upgrade_tier4_name" text="Full Automation" />
+        <!-- Rotor plugging (fork) -->
+        <text name="rhm_warn_rotor_plugged" text="ROTOR PLUGGED! Reverse and clear the machine." />
+        <text name="rhm_warn_plug_risk" text="PLUG RISK" />
     </texts>
 </l10n>

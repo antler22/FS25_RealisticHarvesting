@@ -576,5 +576,8 @@
         <text name="rhm_upgrade_tier2_name" text="Monitoreo ajustes" />
         <text name="rhm_upgrade_tier3_name" text="Automatización velocidad" />
         <text name="rhm_upgrade_tier4_name" text="Automatización completa" />
+        <!-- Rotor plugging (fork) -->
+        <text name="rhm_warn_rotor_plugged" text="¡ROTOR ATASCADO! Marcha atrás y limpie la máquina." />
+        <text name="rhm_warn_plug_risk" text="RIESGO ATASCO" />
     </texts>
 </l10n>

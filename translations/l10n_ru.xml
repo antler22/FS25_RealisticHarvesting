@@ -576,5 +576,8 @@
         <text name="rhm_upgrade_tier2_name" text="Мониторинг настроек" />
         <text name="rhm_upgrade_tier3_name" text="Автоматизация скорости" />
         <text name="rhm_upgrade_tier4_name" text="Полная автоматизация" />
+        <!-- Rotor plugging (fork) -->
+        <text name="rhm_warn_rotor_plugged" text="РОТОР ЗАБИТ! Дайте задний ход и очистите машину." />
+        <text name="rhm_warn_plug_risk" text="РИСК ЗАБИВАНИЯ" />
     </texts>
 </l10n>

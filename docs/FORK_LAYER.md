@@ -73,6 +73,22 @@ yield, hectares per hour and the trip odometer on pickup headers whose reported 
 than the swath. Kept in `combineMemory.swathWidth` like the fork. Unlike the fork it is saved with the game
 and synchronised in multiplayer.
 
+### Ground-speed header loss
+
+`loss % = (speed - 9.65 km/h) ^ 1.35 x 0.28 x cropFactor`, capped at 8 %, grain machines only (canola 2.0,
+soybean 1.8, pea 1.7 ... wheat 1.0, corn 0.25; factors for crops added by the port are judgment calls). It is
+added to upstream's total (still capped at 50 %) and to its "speed" bucket, so the breakdown, tracker and
+analytics report it as speed loss, and since upstream removes grain by the total, it is physical. Same gating
+as upstream's loss (off with crop loss disabled or Arcade loss difficulty) and off in Training mode.
+
+### Rotor plugging
+
+Engine load of 130 % or more held for 10 s plugs the rotor: the machine is held to 1 km/h for 12 s at any
+electronics tier (through the vehicle's `getSpeedLimit`, so a driver, cruise control and a hired worker are all
+held). "Plug risk" warns at 5 s; dropping below 130 % resets the timer. The server runs the clock and tells
+clients by a small event; players joining mid-plug get the state appended to upstream's initial stream. Off in
+Training mode.
+
 ### Anchors added for the rest of upstream's crop list
 
 `cropThroughput.xml` defines unanchored crops relative to anchored ones, for example
@@ -111,6 +127,8 @@ If upstream renames or removes one of these, the matching hook logs
 | `rhm_Combine:onRegisterActionEvents`, `spec.isRhmCombine`, `spec.actionEvents` | TrainingBridge | Instructor keys |
 | `spec.data.load / yield / tonPerHour / moisture`, `spec.combineMemory.currentSettings / currentCrop / machineType` | TelemetryProvider, MoistureModel | Corner-post readouts; moisture reading |
 | `RHM_UnitConverter.getActiveSystem`, `getPhysicalRange` | WorkWidth, CornerPostHUD | Units; decimal places (optional) |
+| `RHM_LoadCalculator:calculateTotalCropLoss` (also `baseLoss` = the "speed" bucket, `overloadLoss`, `totalLoss`, `totalCropLoss`, `cropLoss`) | HeaderLoss | Adds ground-speed loss to the total and to the speed bucket |
+| `loadCalculator.engineLoad` (ratio, 1.0 = 100 %) and `rhm_Combine:getSpeedLimit` / `onUpdateTick` / `onWriteStream` / `onReadStream` | RotorPlug | Overload clock, the 1 km/h stop, join sync |
 | `SpecializationManager.addSpecialization` (engine) | SpecHooks | The trigger for re-hooking `rhm_Combine` |
 
 ## Taking a new upstream release
@@ -133,6 +151,8 @@ moved. Re-read the `P_base` block in `RHM_LoadCalculator:calculateEngineLoad` an
 * `rhmThroughputTable [hp]` - rated throughput of every anchored crop at a horsepower.
 * `rhmTier` - electronics tier of the machine you are in, the package level upstream sees, and whether speed automation is available.
 * `rhmWorkWidth <metres | 48ft | auto>` - manual working width of the machine you are in.
+* `rhmHeaderLoss [on|off|status]` - ground-speed header loss; status shows the active machine's current loss.
+* `rhmPlugging [on|off|status]` - rotor plugging; status shows the active machine's state and overload timer.
 * `rhmTraining`, `rhmTrainingTune`, `rhmTrainingDebug`, `rhmPostScale`, `rhmPost*` - Training mode and Corner Post (unchanged from the fork).
 
 ## What is deliberately not here
@@ -140,4 +160,4 @@ moved. Re-read the `P_base` block in `RHM_LoadCalculator:calculateEngineLoad` an
 * The fork's in-game "purchase an upgrade" function (`CombineMemory:purchaseUpgrade`): it had no caller in the fork; the shop was the only way to buy a tier.
 * The fork's own speed controller and feederhouse ramp, live optimal settings, hired-worker tiers and Tier-4 auto-trim: upstream v1.6.x has equivalents, all keyed to the package level that the tiers above feed.
 * Upstream's threshing behaviour is kept as is: a combine starts threshing with no header attached, and a full tank does not lift, fold or stop the header. (Vanilla differs on both; this is intentional.)
-* Rotor plugging and ground-speed header loss: not ported yet.
+* The plugged-rotor icon on the fork's HUD and the plug count in its session report: upstream's HUD and tracker have no place for them; the on-screen warnings carry the information.

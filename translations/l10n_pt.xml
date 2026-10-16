@@ -574,5 +574,8 @@
         <text name="rhm_upgrade_tier2_name" text="Monitoramento config." />
         <text name="rhm_upgrade_tier3_name" text="Automação velocidade" />
         <text name="rhm_upgrade_tier4_name" text="Automação completa" />
+        <!-- Rotor plugging (fork) -->
+        <text name="rhm_warn_rotor_plugged" text="ROTOR ENTUPIDO! Dê ré e limpe a máquina." />
+        <text name="rhm_warn_plug_risk" text="RISCO DE ENTUPIR" />
     </texts>
 </l10n>

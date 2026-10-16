@@ -576,5 +576,8 @@
         <text name="rhm_upgrade_tier2_name" text="Monitoraggio impostazioni" />
         <text name="rhm_upgrade_tier3_name" text="Automazione velocità" />
         <text name="rhm_upgrade_tier4_name" text="Automazione completa" />
+        <!-- Rotor plugging (fork) -->
+        <text name="rhm_warn_rotor_plugged" text="ROTORE INTASATO! Fare retromarcia e liberare la macchina." />
+        <text name="rhm_warn_plug_risk" text="RISCHIO INTASAM." />
     </texts>
 </l10n>

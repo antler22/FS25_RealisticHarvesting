@@ -576,5 +576,8 @@
         <text name="rhm_upgrade_tier2_name" text="Sledování nastavení" />
         <text name="rhm_upgrade_tier3_name" text="Automatizace rychlosti" />
         <text name="rhm_upgrade_tier4_name" text="Plná automatizace" />
+        <!-- Rotor plugging (fork) -->
+        <text name="rhm_warn_rotor_plugged" text="ROTOR UCPANÝ! Couvejte a stroj vyčistěte." />
+        <text name="rhm_warn_plug_risk" text="RIZIKO UCPÁNÍ" />
     </texts>
 </l10n>
