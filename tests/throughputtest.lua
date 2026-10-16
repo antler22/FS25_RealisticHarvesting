@@ -172,7 +172,8 @@ check("thin stand raises energy per t/h", energy(calc, "WHEAT") > expected)
 calc.currentYield = nil
 
 print("=== 8. hook falls through to upstream wherever it owns nothing ===")
-check("crop with no anchor -> upstream (rye)", near(energy(calc, "RYE"), UP_CONST.RYE))
+check("crop with no anchor -> upstream (unlisted mod crop)", near(energy(calc, "UNOBTANIUM"), 6.0))
+check("rye IS anchored now (relative to wheat), no longer upstream's constant", math.abs(energy(calc, "RYE") - UP_CONST.RYE) > 0.05)
 check("root machine -> upstream", near(energy(calc, "WHEAT", "root"), 2.1))
 check("grain combine on a pickup -> upstream", near(energy(calc, "WHEAT", "grain", true), 2.2))
 check("cotton machine -> upstream", near(energy(calc, "WHEAT", "cotton"), UP_CONST.WHEAT))
@@ -217,6 +218,65 @@ local ok = pcall(function()
 end)
 check("missing method does not throw", ok)
 check("missing method is logged", #warnings > w0, warnings[#warnings] or "")
+
+print("=== 12. relative anchors (\"like\" crops) ===")
+C.load()
+-- name, reference, factor, forage?  - mirrors the block at the end of cropThroughput.xml
+local relatives = {
+    { "rye", "wheat", 0.90 }, { "triticale", "wheat", 0.95 }, { "spelt", "wheat", 0.80 },
+    { "millet", "wheat", 0.55 }, { "buckwheat", "wheat", 0.50 },
+    { "mustard", "canola", 1.00 }, { "linseed", "canola", 0.85 }, { "safflower", "canola", 0.85 },
+    { "poppy", "canola", 0.60 }, { "hemp", "canola", 0.55 }, { "grass_seed", "canola", 0.30 },
+    { "clover", "canola", 0.35 }, { "beans", "soybean", 1.00 }, { "bean", "soybean", 1.00 },
+    { "poplar", "woodchips", 1.00, true }, { "meadow", "grass", 1.00, true },
+    { "silage", "maize", 1.00, true }, { "gps", "maize", 1.00, true }, { "hay", "drygrass", 1.00, true },
+}
+local allRelativesOk = true
+for _, r in ipairs(relatives) do
+    local get = r[4] and C.getForageCurve or C.getGrainCurve
+    local d, ref = get(r[1]), get(r[2])
+    local ok = d and ref and near(d.exp, ref.exp, 1e-12) and near(d.coef / ref.coef, r[3], 1e-9)
+    if not ok then allRelativesOk = false; print("  FAIL  " .. r[1] .. " is not " .. r[3] .. " x " .. r[2]) end
+end
+check("every relative crop = factor x reference, same exponent", allRelativesOk, #relatives .. " crops")
+do
+    local rye, wheat = C.getGrainCurve("rye"), C.getGrainCurve("wheat")
+    for _, hp in ipairs({ 280, 555, 775 }) do
+        check("rye mass at " .. hp .. " hp = 0.90 x wheat",
+            near(C.curveKgPerSec(rye, hp), 0.90 * C.curveKgPerSec(wheat, hp), 1e-9))
+    end
+    check("rye no longer out-produces wheat", C.curveKgPerSec(rye, 775) < C.curveKgPerSec(wheat, 775))
+    check("flax resolves to linseed", C.getGrainCurve("FLAX") == C.getGrainCurve("linseed"))
+    check("LUCERNE_WINDROW resolves to the alfalfa forage curve", C.getForageCurve("LUCERNE_WINDROW") == C.getForageCurve("alfalfa"))
+    check("MAIZE_FORAGE resolves to the maize forage curve", C.getForageCurve("MAIZE_FORAGE") == C.getForageCurve("maize"))
+end
+-- A relative crop must have a defined reference; a typo is skipped with a warning, never fatal.
+do
+    local w0 = #warnings
+    crops[#crops + 1] = { name = "typo", like = "whaet", factor = "0.9" }
+    local ok2 = pcall(C.load)
+    check("a 'like' pointing at a missing crop is skipped, not fatal", ok2 and C.getGrainCurve("typo") == nil)
+    check("...and is logged", #warnings > w0, warnings[#warnings] or "")
+    crops[#crops] = nil
+    C.load()
+end
+
+print("=== 13. every crop upstream knows has an anchor ===")
+-- Reads upstream's own crop registry, so a crop added upstream later fails here until it is anchored.
+do
+    local f = assert(io.open("src/data/RHM_CombineSettingsDatabase.lua", "rb"))
+    local src = f:read("*a"); f:close()
+    local grain, forage = {}, {}
+    for name, mt in src:gmatch('%["([A-Z_]+)"%]%s*=%s*{%s*machineType%s*=%s*"(%w+)"') do
+        if mt == "grain" then grain[#grain + 1] = name elseif mt == "forage" then forage[#forage + 1] = name end
+    end
+    check("registry parsed (sanity)", #grain >= 25 and #forage >= 8, #grain .. " grain, " .. #forage .. " forage")
+    local missingG, missingF = {}, {}
+    for _, n in ipairs(grain)  do if not C.getGrainCurve(n)  then missingG[#missingG + 1] = n end end
+    for _, n in ipairs(forage) do if not C.getForageCurve(n) then missingF[#missingF + 1] = n end end
+    check("every grain-machine crop has an anchor", #missingG == 0, #missingG > 0 and ("MISSING: " .. table.concat(missingG, ", ")) or "")
+    check("every forage crop has an anchor", #missingF == 0, #missingF > 0 and ("MISSING: " .. table.concat(missingF, ", ")) or "")
+end
 
 print(string.format("\n=== FINAL: %d passed, %d failed ===", pass, fail))
 os.exit(fail == 0 and 0 or 1)

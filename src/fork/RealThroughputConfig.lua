@@ -51,6 +51,11 @@ RealThroughputConfig.BUSHEL_LBS = {
     SOYBEAN = 60, CANOLA = 50, SUNFLOWER = 25,
     PEA = 60, LENTIL = 60, CHICKPEA = 60,
     COTTON = 32, SUGARBEET = 60, POTATO = 60,
+    -- Crops added by the port. Used only to label bu/hr in `rhmThroughputTable`: these crops are
+    -- defined by mass ("like" another crop), so the weight cannot change what a machine does.
+    TRITICALE = 48, SPELT = 40, MILLET = 50, BUCKWHEAT = 48,
+    LINSEED = 56, FLAX = 56, MUSTARD = 50, SAFFLOWER = 40, POPPY = 46, HEMP = 44,
+    GRASS_SEED = 20, CLOVER = 60, BEANS = 60, BEAN = 60,
 }
 
 -- EN: The XML uses the farmer-facing name "corn"; FS25 and the weight table call it MAIZE.
@@ -116,6 +121,7 @@ function RealThroughputConfig.load()
 
     local C = RealThroughputConfig
     local count, i = 0, 0
+    local relatives = {}   -- crops defined as "like" another, resolved after every explicit anchor is in
     while true do
         local key = string.format("cropThroughput.crop(%d)", i)
         if not hasXMLProperty(xmlFile, key) then break end
@@ -126,8 +132,21 @@ function RealThroughputConfig.load()
         local buRef = getXMLFloat(xmlFile, key .. "#buPerHrRef")
         local tMin  = getXMLFloat(xmlFile, key .. "#tPerHrMin")
         local tMax  = getXMLFloat(xmlFile, key .. "#tPerHrMax")
+        local like   = getXMLString(xmlFile, key .. "#like")
+        local factor = getXMLFloat(xmlFile, key .. "#factor")
+        local kind   = getXMLString(xmlFile, key .. "#kind")
 
-        if name then
+        if name and like and factor and factor > 0
+            and not (buMin or buMax or buRef or tMin or tMax) then
+            -- EN: "Like" form: this crop's throughput is `factor` x another crop's, at every
+            --     horsepower. Same curve shape (same exponent), so a derived crop stays in step
+            --     with its reference if the reference is retuned. kind="forage" looks the
+            --     reference up among the forage anchors; the default is the grain anchors.
+            -- UA: Форма "like": продуктивність культури = factor x продуктивність іншої на будь-яких
+            --     к.с. Та сама форма кривої; kind="forage" шукає еталон серед форажних.
+            relatives[#relatives + 1] = { name = name:lower(), like = like:lower(), factor = factor,
+                                          forage = (kind == "forage") }
+        elseif name then
             local cropKey = name:lower()
             if tMin and tMax and tMin > 0 and tMax > 0 then
                 -- EN: Forage — US short tons/hr at the forage anchor horsepowers.
@@ -148,6 +167,21 @@ function RealThroughputConfig.load()
         i = i + 1
     end
 
+    -- EN: Resolve "like" crops. A crop may only be like an EXPLICITLY anchored one (no chains),
+    --     which keeps resolution order-independent and makes a typo fail loudly, not quietly.
+    -- UA: Розв'язуємо "like": еталоном може бути лише явно задана культура (без ланцюжків).
+    for _, r in ipairs(relatives) do
+        local pool = r.forage and C._forage or C._grain
+        local ref = pool[r.like]
+        if ref then
+            pool[r.name] = { coef = ref.coef * r.factor, exp = ref.exp }
+            count = count + 1
+        else
+            Logging.warning("[RHM-fork] RealThroughput: crop '%s' is like '%s' (%s), which has no anchor — skipped",
+                r.name, r.like, r.forage and "forage" or "grain")
+        end
+    end
+
     delete(xmlFile)
     RealThroughputConfig._source = source
     if rhm_log then rhm_log(string.format("RHM [RealThroughput]: loaded %d crop curve(s) from %s config", count, source)) end
@@ -160,22 +194,34 @@ end
 -- EN: Look a crop up by name, tolerant of the spellings the engine and the settings database use:
 --     case, underscores (RICE_LONG_GRAIN vs riceLongGrain), plural "oats", and corn/maize.
 -- UA: Пошук за назвою, стійкий до різних написань: регістр, підкреслення, "oats", corn/maize.
+-- EN: Names that mean the same crop. Tried only when the name itself has no entry, so an explicit
+--     entry always wins over an alias.
+local ALIASES = {
+    oats = "oat", peas = "pea", lucerne = "alfalfa",
+    flax = "linseed", linseed = "flax",
+    maize = "corn", corn = "maize",
+}
+
 local function lookup(tbl, cropName)
     if not cropName then return nil end
     local key = tostring(cropName):lower()
-    local hit = tbl[key]
-    if hit then return hit end
 
-    local stripped = key:gsub("_", "")
-    hit = tbl[stripped]
-    if hit then return hit end
+    -- EN: Candidate spellings, most specific first: as given; without underscores
+    --     (RICE_LONG_GRAIN vs riceLongGrain); without a windrow/chopped/forage suffix.
+    local candidates = { key, (key:gsub("_", "")) }
+    local base = key:match("^(.-)_windrow$") or key:match("^(.-)_chopped$") or key:match("^(.-)_forage$")
+    if base then
+        candidates[#candidates + 1] = base
+        candidates[#candidates + 1] = (base:gsub("_", ""))
+    end
 
-    local suffixless = key:match("^(.-)_windrow$") or key:match("^(.-)_chopped$") or key:match("^(.-)_forage$")
-    if suffixless and tbl[suffixless] then return tbl[suffixless] end
-
-    if stripped == "oats" then return tbl.oat end
-    if stripped == "maize" then return tbl.corn end
-    if stripped == "corn"  then return tbl.maize end
+    for _, c in ipairs(candidates) do
+        if tbl[c] then return tbl[c] end
+    end
+    for _, c in ipairs(candidates) do
+        local alias = ALIASES[c]
+        if alias and tbl[alias] then return tbl[alias] end
+    end
     return nil
 end
 

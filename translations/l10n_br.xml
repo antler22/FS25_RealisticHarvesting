@@ -566,5 +566,13 @@
         <text name="input_RHM_TRAIN_TAIL_UP" text="Treinamento: Retornos +" />
         <text name="input_RHM_TRAIN_TAIL_DOWN" text="Treinamento: Retornos -" />
         <text name="input_RHM_TRAIN_ZERO" text="Treinamento: Redefinir canais" />
+        <!-- Electronics tiers (fork) -->
+        <text name="rhm_upgrade_section_title" text="Tecnologia de colheita" />
+        <text name="rhm_upgrade_tier0_name" text="Sem melhoria" />
+        <text name="rhm_upgrade_tier1_name" text="Bandeja coletora" />
+        <text name="rhm_upgrade_tier1_forage_name" text="Monitor qualidade picagem" />
+        <text name="rhm_upgrade_tier2_name" text="Monitoramento config." />
+        <text name="rhm_upgrade_tier3_name" text="Automação velocidade" />
+        <text name="rhm_upgrade_tier4_name" text="Automação completa" />
     </texts>
 </l10n>

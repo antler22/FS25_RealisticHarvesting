@@ -568,5 +568,13 @@
         <text name="input_RHM_TRAIN_TAIL_UP" text="Обучение: Возврат +" />
         <text name="input_RHM_TRAIN_TAIL_DOWN" text="Обучение: Возврат -" />
         <text name="input_RHM_TRAIN_ZERO" text="Обучение: Сбросить каналы" />
+        <!-- Electronics tiers (fork) -->
+        <text name="rhm_upgrade_section_title" text="Технология уборки" />
+        <text name="rhm_upgrade_tier0_name" text="Без улучшения" />
+        <text name="rhm_upgrade_tier1_name" text="Поддон сбора потерь" />
+        <text name="rhm_upgrade_tier1_forage_name" text="Монитор качества резки" />
+        <text name="rhm_upgrade_tier2_name" text="Мониторинг настроек" />
+        <text name="rhm_upgrade_tier3_name" text="Автоматизация скорости" />
+        <text name="rhm_upgrade_tier4_name" text="Полная автоматизация" />
     </texts>
 </l10n>

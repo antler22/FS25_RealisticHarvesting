@@ -568,5 +568,13 @@
         <text name="input_RHM_TRAIN_TAIL_UP" text="Formazione: Ritorni +" />
         <text name="input_RHM_TRAIN_TAIL_DOWN" text="Formazione: Ritorni -" />
         <text name="input_RHM_TRAIN_ZERO" text="Formazione: Reimposta canali" />
+        <!-- Electronics tiers (fork) -->
+        <text name="rhm_upgrade_section_title" text="Tecnologia di raccolta" />
+        <text name="rhm_upgrade_tier0_name" text="Nessun upgrade" />
+        <text name="rhm_upgrade_tier1_name" text="Vassoio raccogli perdite" />
+        <text name="rhm_upgrade_tier1_forage_name" text="Monitor qualità trinciatura" />
+        <text name="rhm_upgrade_tier2_name" text="Monitoraggio impostazioni" />
+        <text name="rhm_upgrade_tier3_name" text="Automazione velocità" />
+        <text name="rhm_upgrade_tier4_name" text="Automazione completa" />
     </texts>
 </l10n>

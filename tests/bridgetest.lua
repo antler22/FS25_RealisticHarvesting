@@ -54,8 +54,17 @@ end
 function RHM_LoadCalculator:calculateEngineLoad() end
 function RHM_LoadCalculator:getCropSpecificEnergy() return 1 end
 
+-- ForkLoader also loads the defaults and electronics-tier modules (covered by electronicstest.lua).
+-- They wrap the pieces below; these stubs only need to exist so the whole layer loads warning-free.
+RHM_CombineMemory = { new = function() return { currentSettings = {} } end }
+ConfigurationUtil = { getConfigurationsFromXML = function() return {}, {} end }
+Utils.overwrittenFunction = function(old, new) return function(self, ...) return new(self, old, ...) end end
+
 rhm_Combine = {}
 function rhm_Combine:onRegisterActionEvents() self.baseRegistered = true end
+function rhm_Combine:onLoad() end
+function rhm_Combine:getSpeedLimit() end
+function rhm_Combine:onUpdateTick() end
 
 -- ---- load the real fork layer ----
 g_currentModDirectory = "./"

@@ -26,3 +26,12 @@ source(modDirectory .. "src/fork/TrainingBridge.lua")
 -- UA: Накладка реальної продуктивності: криві з опорними точками через модель енергії оригіналу.
 source(modDirectory .. "src/fork/RealThroughputConfig.lua")
 source(modDirectory .. "src/fork/RealThroughput.lua")
+
+-- EN: Fork defaults that differ from upstream's (target engine load 95 %).
+-- UA: Типові значення форку, що відрізняються від оригіналу (цільове навантаження 95 %).
+source(modDirectory .. "src/fork/Defaults.lua")
+
+-- EN: The fork's purchasable electronics tiers, replacing upstream's package ladder in the shop and
+--     feeding upstream's gates from it. Needs rhm_Combine, the calibration GUI and RHM_Api.
+-- UA: Купувані електронні рівні форку: замінюють драбину пакетів оригіналу в магазині та живлять його обмеження.
+source(modDirectory .. "src/fork/ElectronicsTiers.lua")

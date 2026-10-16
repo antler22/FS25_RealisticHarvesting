@@ -568,5 +568,13 @@
         <text name="input_RHM_TRAIN_TAIL_UP" text="Formación: Retornos +" />
         <text name="input_RHM_TRAIN_TAIL_DOWN" text="Formación: Retornos -" />
         <text name="input_RHM_TRAIN_ZERO" text="Formación: Reiniciar canales" />
+        <!-- Electronics tiers (fork) -->
+        <text name="rhm_upgrade_section_title" text="Tecnología de cosecha" />
+        <text name="rhm_upgrade_tier0_name" text="Sin mejora" />
+        <text name="rhm_upgrade_tier1_name" text="Bandeja recoge pérdidas" />
+        <text name="rhm_upgrade_tier1_forage_name" text="Monitor calidad picado" />
+        <text name="rhm_upgrade_tier2_name" text="Monitoreo ajustes" />
+        <text name="rhm_upgrade_tier3_name" text="Automatización velocidad" />
+        <text name="rhm_upgrade_tier4_name" text="Automatización completa" />
     </texts>
 </l10n>

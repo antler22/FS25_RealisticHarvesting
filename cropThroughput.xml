@@ -100,6 +100,14 @@
     The mod will treat it as the 400 hp reference and use a fixed exponent
     of 0.75.  This is less accurate than the two-point form.
         <crop name="wheat" buPerHrRef="1800" />
+    CROPS ANCHORED RELATIVE TO ANOTHER CROP  (added by the port; see the block at the end of this file)
+    A crop without anchors of its own can be defined as a multiple of one that has them:
+        <crop name="rye" like="wheat" factor="0.90" />
+    factor is throughput by MASS relative to the reference crop at the SAME horsepower, so the
+    derived crop keeps the reference's curve shape (its exponent) and follows it if you retune
+    the reference. Add kind="forage" to take the reference from the forage anchors instead of
+    the grain ones. A crop may only be "like" one that is anchored explicitly - no chains.
+
 -->
 
 <cropThroughput>
@@ -310,5 +318,49 @@
     <crop name="woodchips"
           tPerHrMin="125"
           tPerHrMax="280" />
+
+    <!--
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    CROPS ANCHORED RELATIVE TO ANOTHER CROP
+    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    Upstream's crop list is wider than the table above. A crop with no anchor falls back to
+    upstream's own per-crop constant, and for the crops that DO have anchors those constants
+    disagree with them by a factor of two or three - so an unanchored crop would run on a
+    different scale from its neighbours (rye out-producing wheat, for instance).
+
+    These entries close that gap. They are judgment calls tied to relationships already present
+    in the table above, NOT measurements: capacity is limited by the cleaning shoe, so what
+    matters is seed size and density and how much straw or other material comes through per
+    kilogram of grain. Edit freely; the numbers are meant to be tuned.
+
+    factor = mass throughput relative to the reference crop, at the same horsepower.
+    -->
+
+    <!-- Cereals - reference: wheat -->
+    <crop name="rye"       like="wheat" factor="0.90" />   <!-- tall, tough straw: more material per kg of grain -->
+    <crop name="triticale" like="wheat" factor="0.95" />   <!-- wheat-like, slightly more straw -->
+    <crop name="spelt"     like="wheat" factor="0.80" />   <!-- hulled: bulky spikelets, heavy chaff load -->
+    <crop name="millet"    like="wheat" factor="0.55" />   <!-- small round seed, fragile panicle -->
+    <crop name="buckwheat" like="wheat" factor="0.50" />   <!-- delicate triangular seed that shatters; run slowly -->
+
+    <!-- Small oilseeds and seed crops - reference: canola -->
+    <crop name="mustard"    like="canola" factor="1.00" /> <!-- near-identical crop to canola -->
+    <crop name="linseed"    like="canola" factor="0.85" /> <!-- small smooth seed; strong stems wrap on rotors and belts (also matches "flax") -->
+    <crop name="safflower"  like="canola" factor="0.85" /> <!-- spiny heads; between canola and sunflower -->
+    <crop name="poppy"      like="canola" factor="0.60" /> <!-- tiny seed in capsules; run slowly to hold losses down -->
+    <crop name="hemp"       like="canola" factor="0.55" /> <!-- fibrous stalk wraps on rotors -->
+    <crop name="grass_seed" like="canola" factor="0.30" /> <!-- light, chaff-like seed; strongly shoe-limited -->
+    <crop name="clover"     like="canola" factor="0.35" /> <!-- clover seed crop (the forage "clover" below is a separate entry) -->
+
+    <!-- Field beans - reference: soybean -->
+    <crop name="beans" like="soybean" factor="1.00" />
+    <crop name="bean"  like="soybean" factor="1.00" />
+
+    <!-- Forage names upstream recognises but the table above does not list -->
+    <crop name="poplar" like="woodchips" factor="1.00" kind="forage" />   <!-- short-rotation wood chipping -->
+    <crop name="meadow" like="grass"     factor="1.00" kind="forage" />
+    <crop name="silage" like="maize"     factor="1.00" kind="forage" />
+    <crop name="gps"    like="maize"     factor="1.00" kind="forage" />   <!-- whole-crop silage -->
+    <crop name="hay"    like="drygrass"  factor="1.00" kind="forage" />
 
 </cropThroughput>

@@ -568,5 +568,13 @@
         <text name="input_RHM_TRAIN_TAIL_UP" text="Výcvik: Návrat +" />
         <text name="input_RHM_TRAIN_TAIL_DOWN" text="Výcvik: Návrat -" />
         <text name="input_RHM_TRAIN_ZERO" text="Výcvik: Resetovat kanály" />
+        <!-- Electronics tiers (fork) -->
+        <text name="rhm_upgrade_section_title" text="Technologie sklizně" />
+        <text name="rhm_upgrade_tier0_name" text="Bez upgradu" />
+        <text name="rhm_upgrade_tier1_name" text="Záchytná pánev" />
+        <text name="rhm_upgrade_tier1_forage_name" text="Monitor kvality řezanky" />
+        <text name="rhm_upgrade_tier2_name" text="Sledování nastavení" />
+        <text name="rhm_upgrade_tier3_name" text="Automatizace rychlosti" />
+        <text name="rhm_upgrade_tier4_name" text="Plná automatizace" />
     </texts>
 </l10n>

@@ -570,5 +570,13 @@
         <text name="input_RHM_TRAIN_TAIL_UP" text="Formation: Retours +" />
         <text name="input_RHM_TRAIN_TAIL_DOWN" text="Formation: Retours -" />
         <text name="input_RHM_TRAIN_ZERO" text="Formation: Réinitialiser" />
+        <!-- Electronics tiers (fork) -->
+        <text name="rhm_upgrade_section_title" text="Technologie de récolte" />
+        <text name="rhm_upgrade_tier0_name" text="Sans amélioration" />
+        <text name="rhm_upgrade_tier1_name" text="Bac récupérateur" />
+        <text name="rhm_upgrade_tier1_forage_name" text="Contrôle qualité coupe" />
+        <text name="rhm_upgrade_tier2_name" text="Surveillance réglages" />
+        <text name="rhm_upgrade_tier3_name" text="Automatisation vitesse" />
+        <text name="rhm_upgrade_tier4_name" text="Automatisation complète" />
     </texts>
 </l10n>

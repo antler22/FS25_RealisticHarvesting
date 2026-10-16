@@ -568,5 +568,13 @@
         <text name="input_RHM_TRAIN_TAIL_UP" text="Szkolenie: Powrót +" />
         <text name="input_RHM_TRAIN_TAIL_DOWN" text="Szkolenie: Powrót -" />
         <text name="input_RHM_TRAIN_ZERO" text="Szkolenie: Resetuj kanały" />
+        <!-- Electronics tiers (fork) -->
+        <text name="rhm_upgrade_section_title" text="Technologia zbioru" />
+        <text name="rhm_upgrade_tier0_name" text="Bez ulepszeń" />
+        <text name="rhm_upgrade_tier1_name" text="Taca zbierająca straty" />
+        <text name="rhm_upgrade_tier1_forage_name" text="Monitoring jakości sieczki" />
+        <text name="rhm_upgrade_tier2_name" text="Monitorowanie ustawień" />
+        <text name="rhm_upgrade_tier3_name" text="Automatyzacja prędkości" />
+        <text name="rhm_upgrade_tier4_name" text="Pełna automatyzacja" />
     </texts>
 </l10n>

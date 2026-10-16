@@ -567,5 +567,13 @@
         <text name="input_RHM_TRAIN_TAIL_UP" text="Навчання: Повернення +" />
         <text name="input_RHM_TRAIN_TAIL_DOWN" text="Навчання: Повернення -" />
         <text name="input_RHM_TRAIN_ZERO" text="Навчання: Скинути канали" />
+        <!-- Electronics tiers (fork) -->
+        <text name="rhm_upgrade_section_title" text="Технологія збирання" />
+        <text name="rhm_upgrade_tier0_name" text="Без покращень" />
+        <text name="rhm_upgrade_tier1_name" text="Піддон для збирання втрат" />
+        <text name="rhm_upgrade_tier1_forage_name" text="Моніторинг якості різки" />
+        <text name="rhm_upgrade_tier2_name" text="Моніторинг налаштувань" />
+        <text name="rhm_upgrade_tier3_name" text="Автоматизація швидкості" />
+        <text name="rhm_upgrade_tier4_name" text="Повна автоматизація" />
     </texts>
 </l10n>
