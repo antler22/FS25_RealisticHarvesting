@@ -559,5 +559,14 @@
         <text name="rhm_threshing_forage" text="Кормоуборочный" />
         <text name="rhm_threshing_root" text="Корнеуборочный" />
         <text name="rhm_threshing_specialty" text="Специальный" />
+        <!-- Training mode (fork) -->
+        <text name="input_RHM_TRAIN_TOGGLE" text="Режим Обучения Вкл/Выкл" />
+        <text name="input_RHM_TRAIN_SHOE_UP" text="Обучение: Потери решета +" />
+        <text name="input_RHM_TRAIN_SHOE_DOWN" text="Обучение: Потери решета -" />
+        <text name="input_RHM_TRAIN_SEP_UP" text="Обучение: Потери ротора +" />
+        <text name="input_RHM_TRAIN_SEP_DOWN" text="Обучение: Потери ротора -" />
+        <text name="input_RHM_TRAIN_TAIL_UP" text="Обучение: Возврат +" />
+        <text name="input_RHM_TRAIN_TAIL_DOWN" text="Обучение: Возврат -" />
+        <text name="input_RHM_TRAIN_ZERO" text="Обучение: Сбросить каналы" />
     </texts>
 </l10n>

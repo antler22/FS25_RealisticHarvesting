@@ -558,5 +558,14 @@
         <text name="rhm_threshing_forage" text="Кормозбиральний" />
         <text name="rhm_threshing_root" text="Копач коренеплодів" />
         <text name="rhm_threshing_specialty" text="Спеціальний" />
+        <!-- Training mode (fork) -->
+        <text name="input_RHM_TRAIN_TOGGLE" text="Режим Навчання Увімк/Вимк" />
+        <text name="input_RHM_TRAIN_SHOE_UP" text="Навчання: Втрати решета +" />
+        <text name="input_RHM_TRAIN_SHOE_DOWN" text="Навчання: Втрати решета -" />
+        <text name="input_RHM_TRAIN_SEP_UP" text="Навчання: Втрати ротора +" />
+        <text name="input_RHM_TRAIN_SEP_DOWN" text="Навчання: Втрати ротора -" />
+        <text name="input_RHM_TRAIN_TAIL_UP" text="Навчання: Повернення +" />
+        <text name="input_RHM_TRAIN_TAIL_DOWN" text="Навчання: Повернення -" />
+        <text name="input_RHM_TRAIN_ZERO" text="Навчання: Скинути канали" />
     </texts>
 </l10n>

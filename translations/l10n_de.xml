@@ -559,5 +559,14 @@
         <text name="rhm_threshing_forage" text="Feldhäcksler" />
         <text name="rhm_threshing_root" text="Rodemaschine" />
         <text name="rhm_threshing_specialty" text="Spezialerntemaschine" />
+        <!-- Training mode (fork) -->
+        <text name="input_RHM_TRAIN_TOGGLE" text="Trainingsmodus An/Aus" />
+        <text name="input_RHM_TRAIN_SHOE_UP" text="Training: Siebverlust hoch" />
+        <text name="input_RHM_TRAIN_SHOE_DOWN" text="Training: Siebverlust runter" />
+        <text name="input_RHM_TRAIN_SEP_UP" text="Training: Rotorverlust hoch" />
+        <text name="input_RHM_TRAIN_SEP_DOWN" text="Training: Rotorverlust runter" />
+        <text name="input_RHM_TRAIN_TAIL_UP" text="Training: Überkehr hoch" />
+        <text name="input_RHM_TRAIN_TAIL_DOWN" text="Training: Überkehr runter" />
+        <text name="input_RHM_TRAIN_ZERO" text="Training: Kanäle zurücksetzen" />
     </texts>
 </l10n>

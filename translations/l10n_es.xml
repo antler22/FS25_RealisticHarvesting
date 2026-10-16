@@ -559,5 +559,14 @@
         <text name="rhm_threshing_forage" text="Picadora de forraje" />
         <text name="rhm_threshing_root" text="Cosechadora de raíces" />
         <text name="rhm_threshing_specialty" text="Cosechadora especial" />
+        <!-- Training mode (fork) -->
+        <text name="input_RHM_TRAIN_TOGGLE" text="Modo Formación On/Off" />
+        <text name="input_RHM_TRAIN_SHOE_UP" text="Formación: Pérdida criba +" />
+        <text name="input_RHM_TRAIN_SHOE_DOWN" text="Formación: Pérdida criba -" />
+        <text name="input_RHM_TRAIN_SEP_UP" text="Formación: Pérdida rotor +" />
+        <text name="input_RHM_TRAIN_SEP_DOWN" text="Formación: Pérdida rotor -" />
+        <text name="input_RHM_TRAIN_TAIL_UP" text="Formación: Retornos +" />
+        <text name="input_RHM_TRAIN_TAIL_DOWN" text="Formación: Retornos -" />
+        <text name="input_RHM_TRAIN_ZERO" text="Formación: Reiniciar canales" />
     </texts>
 </l10n>

@@ -557,5 +557,14 @@
         <text name="rhm_threshing_forage" text="Colhedora de forragem" />
         <text name="rhm_threshing_root" text="Colhedora de raízes" />
         <text name="rhm_threshing_specialty" text="Especializada" />
+        <!-- Training mode (fork) -->
+        <text name="input_RHM_TRAIN_TOGGLE" text="Modo Treinamento Lig/Desl" />
+        <text name="input_RHM_TRAIN_SHOE_UP" text="Treinamento: Perda peneira +" />
+        <text name="input_RHM_TRAIN_SHOE_DOWN" text="Treinamento: Perda peneira -" />
+        <text name="input_RHM_TRAIN_SEP_UP" text="Treinamento: Perda rotor +" />
+        <text name="input_RHM_TRAIN_SEP_DOWN" text="Treinamento: Perda rotor -" />
+        <text name="input_RHM_TRAIN_TAIL_UP" text="Treinamento: Retornos +" />
+        <text name="input_RHM_TRAIN_TAIL_DOWN" text="Treinamento: Retornos -" />
+        <text name="input_RHM_TRAIN_ZERO" text="Treinamento: Redefinir canais" />
     </texts>
 </l10n>

@@ -67,6 +67,9 @@ source(modDirectory .. "src/rhm_Combine.lua")
 -- UA: КРИТИЧНО: rhm_Cutter має бути завантажений ПІСЛЯ rhm_Combine, щоб роздільний запуск жатки працював.
 source(modDirectory .. "src/rhm_Cutter.lua")
 source(modDirectory .. "src/RHM_RealisticHarvestManager.lua")
+-- EN: Fork layer (Training mode, Corner Post HUD, ...). Loaded last so every class it wraps exists.
+-- UA: Шар форку (режим навчання, кутова стійка, ...). Завантажується останнім.
+source(modDirectory .. "src/fork/ForkLoader.lua")
 
 -- EN: Global reference to the main mod manager instance (nil = disabled/not loaded).
 -- UA: Глобальне посилання на головний екземпляр менеджера мода (nil = вимкнено/не завантажено).

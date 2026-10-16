@@ -559,5 +559,14 @@
         <text name="rhm_threshing_forage" text="Forage Chopper" />
         <text name="rhm_threshing_root" text="Root Harvester" />
         <text name="rhm_threshing_specialty" text="Specialty" />
+        <!-- Training mode (fork) -->
+        <text name="input_RHM_TRAIN_TOGGLE" text="Training Mode On/Off" />
+        <text name="input_RHM_TRAIN_SHOE_UP" text="Training: Sieve Loss Up" />
+        <text name="input_RHM_TRAIN_SHOE_DOWN" text="Training: Sieve Loss Down" />
+        <text name="input_RHM_TRAIN_SEP_UP" text="Training: Rotor Loss Up" />
+        <text name="input_RHM_TRAIN_SEP_DOWN" text="Training: Rotor Loss Down" />
+        <text name="input_RHM_TRAIN_TAIL_UP" text="Training: Tailings Up" />
+        <text name="input_RHM_TRAIN_TAIL_DOWN" text="Training: Tailings Down" />
+        <text name="input_RHM_TRAIN_ZERO" text="Training: Reset Channels" />
     </texts>
 </l10n>

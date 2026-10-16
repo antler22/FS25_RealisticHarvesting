@@ -559,5 +559,14 @@
         <text name="rhm_threshing_forage" text="Forage Chopper" />
         <text name="rhm_threshing_root" text="Root Harvester" />
         <text name="rhm_threshing_specialty" text="Specialty" />
+        <!-- Training mode (fork) -->
+        <text name="input_RHM_TRAIN_TOGGLE" text="Režim Výcviku Zap/Vyp" />
+        <text name="input_RHM_TRAIN_SHOE_UP" text="Výcvik: Ztráta síta +" />
+        <text name="input_RHM_TRAIN_SHOE_DOWN" text="Výcvik: Ztráta síta -" />
+        <text name="input_RHM_TRAIN_SEP_UP" text="Výcvik: Ztráta rotoru +" />
+        <text name="input_RHM_TRAIN_SEP_DOWN" text="Výcvik: Ztráta rotoru -" />
+        <text name="input_RHM_TRAIN_TAIL_UP" text="Výcvik: Návrat +" />
+        <text name="input_RHM_TRAIN_TAIL_DOWN" text="Výcvik: Návrat -" />
+        <text name="input_RHM_TRAIN_ZERO" text="Výcvik: Resetovat kanály" />
     </texts>
 </l10n>

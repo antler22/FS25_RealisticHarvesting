@@ -561,5 +561,14 @@
         <text name="rhm_threshing_forage" text="Ensileuse" />
         <text name="rhm_threshing_root" text="Récolteuse de racines" />
         <text name="rhm_threshing_specialty" text="Récolteuse spécialisée" />
+        <!-- Training mode (fork) -->
+        <text name="input_RHM_TRAIN_TOGGLE" text="Mode Formation On/Off" />
+        <text name="input_RHM_TRAIN_SHOE_UP" text="Formation: Perte grille +" />
+        <text name="input_RHM_TRAIN_SHOE_DOWN" text="Formation: Perte grille -" />
+        <text name="input_RHM_TRAIN_SEP_UP" text="Formation: Perte rotor +" />
+        <text name="input_RHM_TRAIN_SEP_DOWN" text="Formation: Perte rotor -" />
+        <text name="input_RHM_TRAIN_TAIL_UP" text="Formation: Retours +" />
+        <text name="input_RHM_TRAIN_TAIL_DOWN" text="Formation: Retours -" />
+        <text name="input_RHM_TRAIN_ZERO" text="Formation: Réinitialiser" />
     </texts>
 </l10n>

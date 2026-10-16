@@ -86,6 +86,15 @@ GitHub: https://github.com/exekx/FS25_RealisticHarvesting]]></fr>
         <action name="RHM_QUICK_RESET_TRIP" category="VEHICLE" />
         <action name="RHM_TOGGLE_MOUSE_CURSOR" category="VEHICLE" />
         <action name="RHM_CLOSE_NOTIFICATION" displayCategory="PLAYER_INTERACTIVE" />
+        <!-- Fork: Training mode. Each loss channel has its own up/down pair, all live at once. -->
+        <action name="RHM_TRAIN_TOGGLE" category="VEHICLE" />
+        <action name="RHM_TRAIN_SHOE_UP" category="VEHICLE" />
+        <action name="RHM_TRAIN_SHOE_DOWN" category="VEHICLE" />
+        <action name="RHM_TRAIN_SEP_UP" category="VEHICLE" />
+        <action name="RHM_TRAIN_SEP_DOWN" category="VEHICLE" />
+        <action name="RHM_TRAIN_TAIL_UP" category="VEHICLE" />
+        <action name="RHM_TRAIN_TAIL_DOWN" category="VEHICLE" />
+        <action name="RHM_TRAIN_ZERO" category="VEHICLE" />
     </actions>
     
     <inputBinding>
@@ -107,6 +116,33 @@ GitHub: https://github.com/exekx/FS25_RealisticHarvesting]]></fr>
         <actionBinding action="RHM_CLOSE_NOTIFICATION">
             <binding device="KB_MOUSE_DEFAULT" input="MOUSE_BUTTON_LEFT" />
             <binding device="0_XINPUT_GAMEPAD" input="BUTTON_1" />
+        </actionBinding>
+        <!-- Fork: Training-mode bindings. Numpad 3x3 maps onto the panel columns:
+                 NUM 7 / 8 / 9 raise (sieve / rotor / tailings), NUM 1 / 2 / 3 lower.
+             NUM LOCK MUST BE ON, or the numpad emits End/Down/PageDown instead of KP codes. -->
+        <actionBinding action="RHM_TRAIN_TOGGLE">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_rshift KEY_t" />
+        </actionBinding>
+        <actionBinding action="RHM_TRAIN_SHOE_UP">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_KP_7" />
+        </actionBinding>
+        <actionBinding action="RHM_TRAIN_SHOE_DOWN">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_KP_1" />
+        </actionBinding>
+        <actionBinding action="RHM_TRAIN_SEP_UP">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_KP_8" />
+        </actionBinding>
+        <actionBinding action="RHM_TRAIN_SEP_DOWN">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_KP_2" />
+        </actionBinding>
+        <actionBinding action="RHM_TRAIN_TAIL_UP">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_KP_9" />
+        </actionBinding>
+        <actionBinding action="RHM_TRAIN_TAIL_DOWN">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_KP_3" />
+        </actionBinding>
+        <actionBinding action="RHM_TRAIN_ZERO">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_rshift KEY_0" />
         </actionBinding>
     </inputBinding>
 

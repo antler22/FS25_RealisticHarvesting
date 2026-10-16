@@ -559,5 +559,14 @@
         <text name="rhm_threshing_forage" text="Sieczkarnia" />
         <text name="rhm_threshing_root" text="Kombajn do okopowych" />
         <text name="rhm_threshing_specialty" text="Specjalistyczny" />
+        <!-- Training mode (fork) -->
+        <text name="input_RHM_TRAIN_TOGGLE" text="Tryb Szkolenia Wł/Wył" />
+        <text name="input_RHM_TRAIN_SHOE_UP" text="Szkolenie: Strata sita +" />
+        <text name="input_RHM_TRAIN_SHOE_DOWN" text="Szkolenie: Strata sita -" />
+        <text name="input_RHM_TRAIN_SEP_UP" text="Szkolenie: Strata rotora +" />
+        <text name="input_RHM_TRAIN_SEP_DOWN" text="Szkolenie: Strata rotora -" />
+        <text name="input_RHM_TRAIN_TAIL_UP" text="Szkolenie: Powrót +" />
+        <text name="input_RHM_TRAIN_TAIL_DOWN" text="Szkolenie: Powrót -" />
+        <text name="input_RHM_TRAIN_ZERO" text="Szkolenie: Resetuj kanały" />
     </texts>
 </l10n>
