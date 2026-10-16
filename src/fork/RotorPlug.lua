@@ -1,13 +1,13 @@
 -- EN: Rotor plugging - the fork's consequence for overloading the machine, layered over upstream WITHOUT
 --     editing upstream's files.
 --
---     The rule, as in the fork: engine load held at 130 % or more for 10 continuous seconds plugs the rotor.
+--     The rule, as in the fork: engine load held at 110 % or more for 10 continuous seconds plugs the rotor.
 --     A plugged machine crawls at 1 km/h for 12 seconds while it clears, at any electronics tier, with a
 --     blinking warning. A "PLUG RISK" warning appears at the halfway mark so there is time to back off.
---     Dropping below 130 % resets the timer at once.
+--     Dropping below 110 % resets the timer at once.
 --
 --     Why it matters here: below tier 3 there is no automatic speed control, and above it the controller
---     brakes at 102 % - so 130 % for ten seconds happens when a person drives into a crop the machine
+--     brakes at 102 % - so 110 % for ten seconds happens when a person drives into a crop the machine
 --     cannot swallow (or a surge outruns the controller). Until now that cost crop loss and nothing else.
 --
 --     How it is built
@@ -26,12 +26,12 @@
 --     upstream's HUD and tracker have no place for them; the warnings carry the information.
 --
 -- UA: Забивання ротора - наслідок перевантаження машини в форку, поверх оригіналу БЕЗ правок його файлів.
---     Навантаження двигуна >= 130 % безперервно 10 с забиває ротор: 12 с машина повзе зі швидкістю 1 км/год,
+--     Навантаження двигуна >= 110 % безперервно 10 с забиває ротор: 12 с машина повзе зі швидкістю 1 км/год,
 --     на будь-якому рівні електроніки, з миготливим попередженням. На півдорозі - "ризик забивання".
 RotorPlug = {}
 
 RotorPlug.enabled = true
-RotorPlug.LOAD_THRESHOLD = 1.30       -- engine load ratio
+RotorPlug.LOAD_THRESHOLD = 1.10       -- engine load ratio
 RotorPlug.RISK_AFTER_MS  = 5000
 RotorPlug.PLUG_AFTER_MS  = 10000
 RotorPlug.CLEAR_MS       = 12000

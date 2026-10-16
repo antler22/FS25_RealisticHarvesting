@@ -83,9 +83,9 @@ as upstream's loss (off with crop loss disabled or Arcade loss difficulty) and o
 
 ### Rotor plugging
 
-Engine load of 130 % or more held for 10 s plugs the rotor: the machine is held to 1 km/h for 12 s at any
+Engine load of 110 % or more held for 10 s plugs the rotor: the machine is held to 1 km/h for 12 s at any
 electronics tier (through the vehicle's `getSpeedLimit`, so a driver, cruise control and a hired worker are all
-held). "Plug risk" warns at 5 s; dropping below 130 % resets the timer. The server runs the clock and tells
+held). "Plug risk" warns at 5 s; dropping below 110 % resets the timer. The server runs the clock and tells
 clients by a small event; players joining mid-plug get the state appended to upstream's initial stream. Off in
 Training mode.
 

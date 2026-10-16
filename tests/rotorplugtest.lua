@@ -80,17 +80,17 @@ end
 print("=== 1. loads cleanly ===")
 check("no warnings", #warnings == 0, warnings[1] or "")
 
-print("=== 2. the state machine (130 % for 10 s plugs; 12 s to clear) ===")
+print("=== 2. the state machine (110 % for 10 s plugs; 12 s to clear) ===")
 do
     local v = machine(1.0)
     check("normal load: nothing, ever", #run(v, 60) == 0 and P.get(v) == P.OK)
 
-    v = machine(1.29)
-    check("just under 130 %: nothing", #run(v, 60) == 0 and P.get(v) == P.OK)
+    v = machine(1.09)
+    check("just under 110 %: nothing", #run(v, 60) == 0 and P.get(v) == P.OK)
 
-    v = machine(1.30)
+    v = machine(1.10)
     local ch = run(v, 4.9)
-    check("130 % for 4.9 s: still fine", #ch == 0 and P.get(v) == P.OK)
+    check("110 % for 4.9 s: still fine", #ch == 0 and P.get(v) == P.OK)
     ch = run(v, 0.2)
     check("...PLUG RISK at the halfway mark (5 s)", #ch == 1 and ch[1] == P.RISK and P.get(v) == P.RISK)
     ch = run(v, 4.7)
@@ -116,7 +116,7 @@ do
     check("at 7 s: at risk", P.get(v) == P.RISK)
     v.spec_rhm_Combine.loadCalculator.engineLoad = 1.0
     local ch = run(v, 0.1)
-    check("load drops below 130 %: back to clear immediately", ch[1] == P.OK and P.get(v) == P.OK)
+    check("load drops below 110 %: back to clear immediately", ch[1] == P.OK and P.get(v) == P.OK)
     v.spec_rhm_Combine.loadCalculator.engineLoad = 1.5
     ch = run(v, 9.9)
     check("the timer started from zero again (9.9 s is not enough)", P.get(v) == P.RISK and not P.isPlugged(v))
