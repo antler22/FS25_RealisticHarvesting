@@ -49,6 +49,11 @@ function RHM_LoadCalculator:calculateTotalCropLoss(vehicle)
     return 7
 end
 
+-- ForkLoader also loads the real-throughput overlay, which wraps these two (see throughputtest.lua
+-- for its own coverage); they only need to exist here so the load is warning-free.
+function RHM_LoadCalculator:calculateEngineLoad() end
+function RHM_LoadCalculator:getCropSpecificEnergy() return 1 end
+
 rhm_Combine = {}
 function rhm_Combine:onRegisterActionEvents() self.baseRegistered = true end
 

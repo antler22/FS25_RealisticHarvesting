@@ -17,6 +17,12 @@ source(modDirectory .. "src/training/TelemetryProvider.lua")
 source(modDirectory .. "src/training/TrainingInput.lua")
 source(modDirectory .. "src/hud/CornerPostHUD.lua")
 
--- EN: Must come last: it wraps classes defined by upstream and by the modules above.
--- UA: Має бути останнім: обгортає класи оригіналу та модулів вище.
+-- EN: Must come after the modules above: it wraps classes defined by upstream and by them.
+-- UA: Має йти після модулів вище: обгортає класи оригіналу та цих модулів.
 source(modDirectory .. "src/fork/TrainingBridge.lua")
+
+-- EN: Real-throughput overlay: the fork's anchored capacity curves, applied through upstream's
+--     own energy model. Needs RHM_LoadCalculator, so it loads after upstream and after the bridge.
+-- UA: Накладка реальної продуктивності: криві з опорними точками через модель енергії оригіналу.
+source(modDirectory .. "src/fork/RealThroughputConfig.lua")
+source(modDirectory .. "src/fork/RealThroughput.lua")
