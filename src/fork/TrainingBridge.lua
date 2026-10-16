@@ -295,11 +295,17 @@ wrapMethod(RHM_LoadCalculator, "RHM_LoadCalculator", "calculateTotalCropLoss", f
     return orig(self, vehicle)
 end)
 
--- EN: Instructor key bindings. Registered into the SAME actionEvents table upstream just
---     filled, so they are cleared together when the player leaves the machine. The guard
---     mirrors upstream's own canRegister condition (rhm_Combine.lua onRegisterActionEvents).
--- UA: Клавіші інструктора реєструються в ту саму таблицю, що щойно заповнив оригінал.
-if rhm_Combine and type(rhm_Combine.onRegisterActionEvents) == "function" then
+-- EN: Instructor key bindings. Registered into the SAME actionEvents table upstream just filled, so they
+--     are cleared together when the player leaves the machine. The guard mirrors upstream's own
+--     canRegister condition (rhm_Combine.lua onRegisterActionEvents). Installed through ForkSpecHooks
+--     because the engine re-sources rhm_Combine.lua and replaces the table (see SpecHooks.lua).
+-- UA: ÐšÐ»Ð°Ð²Ñ–ÑˆÑ– Ñ–Ð½ÑÑ‚Ñ€ÑƒÐºÑ‚Ð¾Ñ€Ð° Ñ€ÐµÑ”ÑÑ‚Ñ€ÑƒÑŽÑ‚ÑŒÑÑ Ð² Ñ‚Ñƒ ÑÐ°Ð¼Ñƒ Ñ‚Ð°Ð±Ð»Ð¸Ñ†ÑŽ, Ñ‰Ð¾ Ñ‰Ð¾Ð¹Ð½Ð¾ Ð·Ð°Ð¿Ð¾Ð²Ð½Ð¸Ð² Ð¾Ñ€Ð¸Ð³Ñ–Ð½Ð°Ð»Ñƒ. Ð’ÑÑ‚Ð°Ð½Ð¾Ð²Ð»ÑŽÑ”Ñ‚ÑŒÑÑ Ñ‡ÐµÑ€ÐµÐ·
+--     ForkSpecHooks, Ð±Ð¾ Ñ€ÑƒÑˆÑ–Ð¹ Ð¿Ð¾Ð²Ñ‚Ð¾Ñ€Ð½Ð¾ Ð²Ð¸ÐºÐ¾Ð½ÑƒÑ” rhm_Combine.lua Ñ– Ð·Ð°Ð¼Ñ–Ð½ÑŽÑ” Ñ‚Ð°Ð±Ð»Ð¸Ñ†ÑŽ.
+ForkSpecHooks.add("training keys", function()
+    if not (rhm_Combine and type(rhm_Combine.onRegisterActionEvents) == "function") then
+        Logging.warning("[RHM-fork] TrainingBridge: rhm_Combine.onRegisterActionEvents not found - training keys unavailable")
+        return
+    end
     rhm_Combine.onRegisterActionEvents = Utils.appendedFunction(rhm_Combine.onRegisterActionEvents,
         function(self, isActiveForInput, isActiveForInputIgnoreSelection)
             if not self.isClient then return end
@@ -314,6 +320,4 @@ if rhm_Combine and type(rhm_Combine.onRegisterActionEvents) == "function" then
                 TrainingInput.registerActionEvents(self, spec.actionEvents)
             end
         end)
-else
-    Logging.warning("[RHM-fork] TrainingBridge: rhm_Combine.onRegisterActionEvents not found — training keys unavailable")
-end
+end)

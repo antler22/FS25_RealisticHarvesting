@@ -14,6 +14,9 @@ Logging = { warning = function(fmt, ...) warnings[#warnings + 1] = string.format
 -- Matches the engine exactly (utils/Utils.lua:459-467): the wrapper receives (self, oldFunc, ...) with
 -- the RAW old function; callers pass `self` to it themselves, as upstream's own wrapper does.
 Utils = {
+    appendedFunction = function(old, new)
+        return function(...) local r = old(...); new(...); return r end
+    end,
     overwrittenFunction = function(old, new)
         return old == nil and function(self, ...) return new(self, nil, ...) end
             or function(self, ...) return new(self, old, ...) end
@@ -90,8 +93,13 @@ RHM_RealisticHarvestManager = { new = function() return {} end }
 RHM_CombineMemory = { new = function() return { currentSettings = { fan = 50, targetEngineLoad = 80 } } end }
 g_realisticHarvestManager = { settings = { enableSpeedLimit = true } }
 
+-- rhm_Combine hooks go through the installer (the engine replaces that table when it re-sources the
+-- specialization - see bridgetest.lua section 11); ForkLoader runs install() after every module.
+SpecializationManager = { addSpecialization = function() return true end }
+dofile("src/fork/SpecHooks.lua")
 dofile("src/fork/Defaults.lua")
 dofile("src/fork/ElectronicsTiers.lua")
+ForkSpecHooks.install()
 
 local pass, fail = 0, 0
 local function check(name, cond, detail)

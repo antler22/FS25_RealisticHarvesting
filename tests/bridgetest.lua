@@ -60,11 +60,35 @@ RHM_CombineMemory = { new = function() return { currentSettings = {} } end }
 ConfigurationUtil = { getConfigurationsFromXML = function() return {}, {} end }
 Utils.overwrittenFunction = function(old, new) return function(self, ...) return new(self, old, ...) end end
 
-rhm_Combine = {}
-function rhm_Combine:onRegisterActionEvents() self.baseRegistered = true end
-function rhm_Combine:onLoad() end
-function rhm_Combine:getSpeedLimit() end
-function rhm_Combine:onUpdateTick() end
+-- Moisture model, work width: more upstream pieces they wrap, plus the engine's event machinery.
+function RHM_LoadCalculator:calculateSpeedLimit() end
+Class = function(cls, base)
+    if base then setmetatable(cls, { __index = base }) end
+    return { __index = cls }
+end
+Event = { new = function(mt) return setmetatable({}, mt) end }
+InitEventClass = function() end
+NetworkUtil = {}
+XMLValueType = { FLOAT = 1 }
+RHMCombineCalibrationGUI = { draw = function() end, drawParameterRow = function() end }
+-- SpecHooks listens here for the engine registering the rhm_Combine specialization.
+SpecializationManager = { addSpecialization = function() return true end }
+
+-- A fresh rhm_Combine as upstream's rhm_Combine.lua defines it (it starts with `rhm_Combine = {}`).
+local function newUpstreamRhmCombine()
+    local c = {}
+    function c:onRegisterActionEvents() self.baseRegistered = true end
+    function c:onLoad() end
+    function c:getSpeedLimit() end
+    function c:onUpdateTick() end
+    function c.registerXMLPaths() end
+    function c:saveToXMLFile() end
+    function c:loadFromSavegame() end
+    function c:onWriteStream() end
+    function c:onReadStream() end
+    return c
+end
+rhm_Combine = newUpstreamRhmCombine()
 
 -- ---- load the real fork layer ----
 g_currentModDirectory = "./"
@@ -197,6 +221,35 @@ local ok = pcall(function() m2:update(16); m2:update(16) end)
 check("update survives a throwing telemetry provider", ok)
 TelemetryProvider.update = origT
 TrainingMode.setActive(false)
+
+print("=== 11. the engine re-sources rhm_Combine and replaces the table ===")
+-- Upstream's main.lua sources rhm_Combine.lua; the engine sources it AGAIN when it registers the
+-- specialization (SpecializationManager.lua:97), and the class it uses is the second table. Anything
+-- installed only on the first is lost - which no stub-based test of a single table could reveal.
+do
+    local first = rhm_Combine
+    check("hooks were installed on the first table at load", first.__forkHooksInstalled == true)
+
+    rhm_Combine = newUpstreamRhmCombine()                      -- the second `rhm_Combine = {}`
+    check("the replacement table starts un-hooked", rhm_Combine.__forkHooksInstalled == nil
+        and rhm_Combine.onRegisterActionEvents ~= first.onRegisterActionEvents)
+
+    SpecializationManager:addSpecialization("FS25_Mod.rhm_Cutter", "FS25_Mod.rhm_Cutter", "src/rhm_Cutter.lua", "FS25_Mod")
+    check("registering a different specialization does not hook it", rhm_Combine.__forkHooksInstalled == nil)
+
+    SpecializationManager:addSpecialization("FS25_Mod.rhm_Combine", "FS25_Mod.rhm_Combine", "src/rhm_Combine.lua", "FS25_Mod")
+    check("registering rhm_Combine hooks the NEW table", rhm_Combine.__forkHooksInstalled == true)
+
+    registered = {}
+    local veh = setmetatable({ isClient = true, spec_rhm_Combine = { isRhmCombine = true, actionEvents = {} } },
+        { __index = rhm_Combine })
+    rhm_Combine.onRegisterActionEvents(veh, true, true)
+    check("the instructor keys register through the new table", veh.baseRegistered == true and #registered == 1)
+
+    check("install() runs once per table", ForkSpecHooks.install() == false)
+    rhm_Combine = newUpstreamRhmCombine()
+    check("...and again for a table it has not seen", ForkSpecHooks.install() == true)
+end
 
 print(string.format("\n=== FINAL: %d passed, %d failed ===", pass, fail))
 os.exit(fail == 0 and 0 or 1)

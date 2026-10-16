@@ -182,6 +182,12 @@ function RealThroughputConfig.load()
         end
     end
 
+    -- EN: The <moistureSettings> block lives in the same file; hand it to the moisture model while open.
+    -- UA: Блок <moistureSettings> лежить у тому ж файлі; передаємо його моделі вологості, поки файл відкритий.
+    if MoistureModel and MoistureModel.loadFromXML then
+        MoistureModel.loadFromXML(xmlFile)
+    end
+
     delete(xmlFile)
     RealThroughputConfig._source = source
     if rhm_log then rhm_log(string.format("RHM [RealThroughput]: loaded %d crop curve(s) from %s config", count, source)) end

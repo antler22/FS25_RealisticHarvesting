@@ -195,13 +195,22 @@ local function wrapMethod(class, className, name, wrapper)
     class[name] = function(...) return wrapper(orig, ...) end
     return true
 end
+-- EN: rhm_Combine is re-sourced by the engine, which replaces the table (see SpecHooks.lua), so hooks on it
+--     are registered with the installer rather than applied here.
+-- UA: rhm_Combine Ð¿ÐµÑ€ÐµÐ·Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶ÑƒÑ”Ñ‚ÑŒÑÑ Ñ€ÑƒÑˆÑ–Ñ”Ð¼ Ñ– Ð¿Ñ–Ð´Ð¼Ñ–Ð½ÑÑ”Ñ‚ÑŒÑÑ (Ð´Ð¸Ð². SpecHooks.lua), Ñ‚Ð¾Ð¼Ñƒ Ñ…ÑƒÐºÐ¸ Ñ€ÐµÑ”ÑÑ‚Ñ€ÑƒÑŽÑ‚ÑŒÑÑ Ð²
+--     Ñ–Ð½ÑÑ‚Ð°Ð»ÐµÑ€Ñ–, Ð° Ð½Ðµ Ð·Ð°ÑÑ‚Ð¾ÑÐ¾Ð²ÑƒÑŽÑ‚ÑŒÑÑ Ñ‚ÑƒÑ‚.
+local function hookSpec(method, wrapper)
+    ForkSpecHooks.add("tiers: " .. method, function()
+        wrapMethod(rhm_Combine, "rhm_Combine", method, wrapper)
+    end)
+end
 
 -- EN: Upstream's onLoad derives spec.packageLevel from self.configurations["rhmPackage"]. The
 --     mapped level is put there for exactly that call and removed afterwards, so it is never
 --     written to a savegame and upstream computes the field itself at the usual moment.
 -- UA: onLoad оригіналу виводить spec.packageLevel з configurations["rhmPackage"]. Зіставлений рівень
 --     кладемо туди лише на час цього виклику й прибираємо - у збереження він не потрапляє.
-wrapMethod(rhm_Combine, "rhm_Combine", "onLoad", function(orig, self, savegame)
+hookSpec("onLoad", function(orig, self, savegame)
     local cfg = self.configurations
     local level = ElectronicsTiers.getLevel(self)
     local key = ElectronicsTiers.UPSTREAM_CONFIG
@@ -241,11 +250,11 @@ local function callWithSpeedLimitOff(vehicle, fn, ...)
     return a, b, c
 end
 
-wrapMethod(rhm_Combine, "rhm_Combine", "getSpeedLimit", function(orig, self, superFunc, onlyIfWorking)
+hookSpec("getSpeedLimit", function(orig, self, superFunc, onlyIfWorking)
     return callWithSpeedLimitOff(self, orig, self, superFunc, onlyIfWorking)
 end)
 
-wrapMethod(rhm_Combine, "rhm_Combine", "onUpdateTick", function(orig, self, ...)
+hookSpec("onUpdateTick", function(orig, self, ...)
     return callWithSpeedLimitOff(self, orig, self, ...)
 end)
 
