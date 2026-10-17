@@ -73,6 +73,10 @@ yield, hectares per hour and the trip odometer on pickup headers whose reported 
 than the swath. Kept in `combineMemory.swathWidth` like the fork. Unlike the fork it is saved with the game
 and synchronised in multiplayer.
 
+### Units
+
+For either US setting (Imperial or Bushels) grain reads in bushels (bu, bu/min, bu/ac) and silage / forage in US short tons (tn, tn/h, tn/ac), so no pounds appear; upstream's Imperial setting showed lbs/s and metric t/ac. A forage machine is recognised from the machine you are in (the HUD) or a forage crop; history screens that pass neither read as grain. Metric is untouched. `rhmUnits [on|off|status]`.
+
 ### Ground-speed header loss
 
 `loss % = (speed - 9.65 km/h) ^ 1.35 x 0.28 x cropFactor`, capped at 8 %, grain machines only (canola 2.0,
@@ -129,6 +133,7 @@ If upstream renames or removes one of these, the matching hook logs
 | `RHM_UnitConverter.getActiveSystem`, `getPhysicalRange` | WorkWidth, CornerPostHUD | Units; decimal places (optional) |
 | `RHM_LoadCalculator:calculateTotalCropLoss` (also `baseLoss` = the "speed" bucket, `overloadLoss`, `totalLoss`, `totalCropLoss`, `cropLoss`) | HeaderLoss | Adds ground-speed loss to the total and to the speed bucket |
 | `loadCalculator.engineLoad` (ratio, 1.0 = 100 %) and `rhm_Combine:getSpeedLimit` / `onUpdateTick` / `onWriteStream` / `onReadStream` | RotorPlug | Overload clock, the 1 km/h stop, join sync |
+| `RHM_UnitConverter.convertMass/convertProductivity/convertFlowRate/convertYield` and `RHMDraggableHUD:buildActiveCells` | Units | US unit policy; forage scope for the HUD |
 | `SpecializationManager.addSpecialization` (engine) | SpecHooks | The trigger for re-hooking `rhm_Combine` |
 
 ## Taking a new upstream release

@@ -48,6 +48,10 @@ source(modDirectory .. "src/fork/ElectronicsTiers.lua")
 -- UA: Ручна робоча ширина для форажних жаток / підбирачів зі збереженням та синхронізацією.
 source(modDirectory .. "src/fork/WorkWidth.lua")
 
+-- EN: Unit policy: grain in bushels, silage in US short tons, no pounds (US unit systems).
+-- UA: Політика одиниць: зерно - бушелі, силос - короткі тонни США, без фунтів.
+source(modDirectory .. "src/fork/Units.lua")
+
 -- EN: Ground-speed header loss, folded into upstream's crop-loss total and its "speed" bucket.
 -- UA: Втрати від швидкості на жатці, додані до загальних втрат оригіналу та категорії "швидкість".
 source(modDirectory .. "src/fork/HeaderLoss.lua")
