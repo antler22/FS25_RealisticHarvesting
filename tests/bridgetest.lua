@@ -39,7 +39,7 @@ function RHM_RealisticHarvestManager:mouseEvent() self.log[#self.log + 1] = "mou
 function RHM_RealisticHarvestManager:delete() self.log[#self.log + 1] = "delete" end
 function RHM_RealisticHarvestManager:getControlledVehicle() return self.vehicle end
 
-RHMDraggableHUD = {}
+RHMDraggableHUD = { buildActiveCells = function() end }
 RHM_UnitConverter = { SYSTEM_IMPERIAL = 2, SYSTEM_BUSHELS = 3, HECTARE_TO_ACRE = 2.47105 }
 for _, n in ipairs({ "convertMass", "convertProductivity", "convertFlowRate", "convertYield" }) do
     RHM_UnitConverter[n] = function() return 0, "" end
