@@ -40,6 +40,11 @@ function RHM_RealisticHarvestManager:delete() self.log[#self.log + 1] = "delete"
 function RHM_RealisticHarvestManager:getControlledVehicle() return self.vehicle end
 
 RHMDraggableHUD = {}
+RHM_UnitConverter = { SYSTEM_IMPERIAL = 2, SYSTEM_BUSHELS = 3, HECTARE_TO_ACRE = 2.47105 }
+for _, n in ipairs({ "convertMass", "convertProductivity", "convertFlowRate", "convertYield" }) do
+    RHM_UnitConverter[n] = function() return 0, "" end
+end
+RHM_UnitConverter.getActiveSystem = function() return 1 end
 function RHMDraggableHUD:draw() self.drew = (self.drew or 0) + 1 end
 
 RHM_LoadCalculator = {}
