@@ -896,8 +896,10 @@ function RHM_LoadCalculator:update(vehicle, dt, mass)
         self.idleHarvestTime = 0
     else
         self.idleHarvestTime = (self.idleHarvestTime or 0) + dt
-        if self.idleHarvestTime > 3500 then
-            -- Reset entry grace period after 3.5s of no crop intake (e.g. at field turns/headlands)
+        -- Windrows are patchy, so pickups tolerate longer gaps before the pass counts as over
+        local passGapMs = self.isPickup and 8000 or 3500
+        if self.idleHarvestTime > passGapMs then
+            -- Reset entry grace period after a gap in crop intake (e.g. at field turns/headlands)
             self.harvestActiveTime = 0
             self.underloadTimer = 0
         end
@@ -1393,7 +1395,7 @@ function RHM_LoadCalculator:calculateSpeedLimit(vehicle)
         --     Never accelerate into a tramline, sprayer track, or unseeded patch.
         -- UA: Якщо комбайн щойно косив у цьому проході (< 3.5с простою), стабільно утримуємо робочу швидкість через прогалини!
         --     Ніколи не прискорюємося на коліях, слідах обприскувача чи незасіяних ділянках.
-        local isMidPassGap = (self.idleHarvestTime or 0) < 3500 and (self.harvestActiveTime or 0) >= 1500
+        local isMidPassGap = (self.idleHarvestTime or 0) < (self.isPickup and 8000 or 3500) and (self.harvestActiveTime or 0) >= 1500
         if isMidPassGap then
             self.underloadTimer = 0
             return
@@ -1584,7 +1586,8 @@ function RHM_LoadCalculator:calculateSpeedLimit(vehicle)
             -- Smooth hydrostatic acceleration (tau = 2.0s) with slew-rate cap (+0.45 km/h per sec)
             local blend = 1.0 - math.exp(-dtSec / 2.0)
             local speedDelta = (targetSpeed - currentLimit) * blend
-            local maxStep = 0.45 * dtSec
+            -- Faster slew when well underloaded so a stale low speed is escaped quickly
+            local maxStep = (curLoad < (targetLoad * 0.70) and 0.90 or 0.45) * dtSec
             if speedDelta > maxStep then
                 speedDelta = maxStep
             end
@@ -1603,8 +1606,8 @@ function RHM_LoadCalculator:calculateSpeedLimit(vehicle)
     local isSteadyHarvesting = self.isActivelyHarvesting 
         and not isEntry 
         and (self.harvestActiveTime or 0) >= 2800 
-        and (self.engineLoad or 0) >= math.max(0.60, targetLoad - 0.15)
-        and (self.currentAvgMass or 0) >= 0.25 
+        and (self.engineLoad or 0) >= math.max(0.45, targetLoad - 0.35)
+        and (self.currentAvgMass or 0) >= 0.25
         and (self.tonPerHour or 0) >= 0.50
         and (self.idleHarvestTime or 0) == 0
 
